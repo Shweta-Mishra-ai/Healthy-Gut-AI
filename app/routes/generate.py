@@ -11,7 +11,7 @@ def generate(data: dict):
     topic = data.get("topic")
     keyword = data.get("keyword")
     geo = data.get("geo", "India")
-    article_type = data.get("type", "pillar")
+    article_type = data.get("type", "supporting")
 
     draft = generate_article(topic, keyword, article_type)
 
