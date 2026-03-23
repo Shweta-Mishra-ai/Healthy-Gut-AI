@@ -1,7 +1,7 @@
 🎯 Healthy-Gut-AI
 AI-Powered Medical Content Generation System
 
-This repository contains my solution for Problem 1 of the Software Engineer Assignment.
+This repository contains my solution for Problem.
 It demonstrates my ability to work with:
 
 🔹 LLM prompt engineering
@@ -271,3 +271,4 @@ Enhances content for local search intent:
 
 ---
 *Developed by Shweta Mishra | Focusing on AI Agentic Workflows.*
+
