@@ -11,6 +11,10 @@ app = FastAPI(title="Healthy Gut AI Backend")
 os.makedirs("static", exist_ok=True)
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
+@app.get("/health")
+async def health_check():
+    return {"status": "ok"}
+
 @app.get("/", response_class=HTMLResponse)
 async def read_root():
     with open("static/index.html", "r", encoding="utf-8") as f:
