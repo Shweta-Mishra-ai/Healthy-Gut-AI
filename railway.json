@@ -4,7 +4,6 @@
     "builder": "NIXPACKS"
   },
   "deploy": {
-    "startCommand": "python -m app.main",
-    "predeployCommand": "echo 'No migration needed'"
+    "startCommand": "python -m app.main"
   }
 }
