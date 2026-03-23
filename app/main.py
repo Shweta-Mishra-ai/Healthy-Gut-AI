@@ -1,14 +1,15 @@
 from fastapi import FastAPI
 from app.routes.generate import router
 
-app = FastAPI(title="Healthy Gut AI")
+app = FastAPI()
 
 @app.get("/")
-async def root():
-    return {"status": "ok"}
+def root():
+    return {"message": "API is working ✅"}
 
 @app.get("/health")
-async def health():
-    return {"status": "healthy"}
+def health():
+    return {"status": "ok"}
 
-app.include_router(router)
+# IMPORTANT: add prefix
+app.include_router(router, prefix="")
