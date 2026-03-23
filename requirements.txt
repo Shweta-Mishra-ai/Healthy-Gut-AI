@@ -2,5 +2,3 @@ fastapi
 uvicorn
 python-dotenv
 openai
-streamlit
-requests
