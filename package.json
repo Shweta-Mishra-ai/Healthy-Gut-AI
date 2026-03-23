@@ -1,8 +1,0 @@
-{
-  "name": "healthy-gut-ai",
-  "version": "1.0.0",
-  "description": "Dummy package to satisfy npm run migrate pre-deploy command.",
-  "scripts": {
-    "migrate": "echo 'No migration needed'"
-  }
-}
