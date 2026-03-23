@@ -4,7 +4,7 @@ app = FastAPI()
 
 @app.get("/")
 def home():
-    return {"message": "API is working ✅"}
+    return {"message": "Healthy Gut AI running ✅"}
 
 @app.get("/health")
 def health():
