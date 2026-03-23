@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Healthy Gut AI | SEO Article Generator</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+</head>
+<body>
+    <div class="background-globes">
+        <div class="globe globe-1"></div>
+        <div class="globe globe-2"></div>
+    </div>
+    
+    <main class="container">
+        <header>
+            <h1>Healthy Gut AI</h1>
+            <p>Generate precise, medically accurate, and SEO-optimized gut health articles.</p>
+        </header>
+
+        <section class="generator-panel glass">
+            <form id="generate-form">
+                <div class="form-group">
+                    <label for="topic">Article Topic</label>
+                    <input type="text" id="topic" name="topic" placeholder="e.g. Irritable Bowel Syndrome" required>
+                </div>
+                <div class="form-group">
+                    <label for="primary_keyword">Primary Keyword</label>
+                    <input type="text" id="primary_keyword" name="primary_keyword" placeholder="e.g. IBS symptoms" required>
+                </div>
+                <div class="form-group row">
+                    <div class="col">
+                        <label for="geo_target">Geo-Target</label>
+                        <input type="text" id="geo_target" name="geo_target" placeholder="e.g. New York, USA" required>
+                    </div>
+                    <div class="col">
+                        <label for="article_type">Article Type</label>
+                        <select id="article_type" name="article_type">
+                            <option value="pillar">Pillar (2500+ words)</option>
+                            <option value="supporting">Supporting (1000+ words)</option>
+                        </select>
+                    </div>
+                </div>
+                <button type="submit" id="generate-btn" class="btn-primary">Generate Article</button>
+            </form>
+            <div id="loading" class="hidden">
+                <div class="spinner"></div>
+                <p>Consulting knowledge base and synthesizing...</p>
+            </div>
+        </section>
+
+        <section id="results" class="results-panel glass hidden">
+            <!-- Content will be injected here -->
+        </section>
+    </main>
+    <script src="/static/app.js"></script>
+</body>
+</html>
