@@ -1,0 +1,26 @@
+[build]
+  command = "pip install -r requirements.txt"
+  functions = "api"
+
+[build.environment]
+  PYTHON_VERSION = "3.11"
+
+[[redirects]]
+  from = "/generate"
+  to = "/.netlify/functions/index"
+  status = 200
+
+[[redirects]]
+  from = "/health"
+  to = "/.netlify/functions/index"
+  status = 200
+
+[[redirects]]
+  from = "/debug"
+  to = "/.netlify/functions/index"
+  status = 200
+
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
