@@ -1,8 +1,0 @@
-[build]
-builder = "nixpacks"
-
-[deploy]
-startCommand = "sh start.sh"
-restartPolicyType = "on_failure"
-healthcheckPath = "/health"
-healthcheckTimeout = 100
