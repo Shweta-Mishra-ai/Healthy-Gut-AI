@@ -3,7 +3,8 @@ import json
 import re
 import asyncio
 from fastapi import FastAPI, Form
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, FileResponse
+from fastapi.staticfiles import StaticFiles  # ✅ FIX 1: Added missing import
 
 # ====== RAG Knowledge Base ======
 KNOWLEDGE_BASE = {
@@ -18,7 +19,7 @@ def rag_context(topic: str) -> str:
     return " ".join(chunks) if chunks else KNOWLEDGE_BASE["gut"]
 
 
-# ====== Metrics (Python port of JS scripts) ======
+# ====== Metrics ======
 def keyword_density(text: str, kw: str) -> dict:
     words = re.findall(r'\S+', text.lower())
     total = len(words) or 1
@@ -37,13 +38,13 @@ def readability(text: str) -> dict:
     return {"fleschReadingEase": score}
 
 
-# ====== Mock LLM (replace with openai when key is set) ======
+# ====== LLM Generate ======
 async def llm_generate(topic, keyword, geo, article_type):
     api_key = os.getenv("OPENAI_API_KEY", "")
     ctx = rag_context(topic)
 
     if not api_key:
-        # Full mock response
+        # Mock response when no API key set
         article = f"""# {topic.title()}: Your Complete Guide
 
 **{keyword}** is one of the most searched topics in gut health today.
@@ -120,86 +121,9 @@ Return JSON with keys: optimized_article_markdown, meta_description, url_slug, f
 # ====== FastAPI App ======
 app = FastAPI(title="Healthy Gut AI")
 
-UI = r"""<!DOCTYPE html>
-<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Healthy Gut AI | SEO Article Generator</title>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
-<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-<style>
-:root{--p:#4F46E5;--s:#10B981}*{box-sizing:border-box;margin:0;padding:0}
-body{font-family:Inter,sans-serif;background:#E0E7FF;min-height:100vh}
-.g{position:fixed;border-radius:50%;filter:blur(80px);opacity:.6;z-index:-1;animation:d 20s infinite alternate}
-.g1{width:600px;height:600px;background:linear-gradient(135deg,#4F46E5,#A78BFA);top:-100px;left:-100px}
-.g2{width:500px;height:500px;background:linear-gradient(135deg,#10B981,#34D399);bottom:-100px;right:-100px;animation-delay:-10s}
-@keyframes d{to{transform:translate(-50px,50px)}}
-.w{max-width:900px;margin:0 auto;padding:3rem 1.5rem}
-h1{text-align:center;font-size:2.8rem;font-weight:700;background:linear-gradient(to right,var(--p),var(--s));-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:.5rem}
-p.s{text-align:center;color:#6B7280;margin-bottom:2rem}
-.c{background:rgba(255,255,255,.75);backdrop-filter:blur(16px);border:1px solid rgba(255,255,255,.35);border-radius:1.5rem;padding:2.5rem;box-shadow:0 10px 40px rgba(0,0,0,.05)}
-.f{margin-bottom:1.25rem}.r{display:flex;gap:1.25rem}.col{flex:1}
-label{display:block;font-weight:600;margin-bottom:.45rem;color:#374151;font-size:.95rem}
-input,select{width:100%;padding:.75rem 1rem;border:1px solid #D1D5DB;border-radius:.7rem;font:1rem Inter,sans-serif;background:rgba(255,255,255,.85)}
-input:focus,select:focus{outline:none;border-color:var(--p);box-shadow:0 0 0 3px rgba(79,70,229,.18)}
-.btn{width:100%;padding:1rem;font:700 1.1rem Inter,sans-serif;color:#fff;background:linear-gradient(135deg,var(--p),#818CF8);border:none;border-radius:.75rem;cursor:pointer;margin-top:1rem;transition:transform .2s,box-shadow .2s}
-.btn:hover{transform:translateY(-2px);box-shadow:0 6px 18px rgba(79,70,229,.4)}
-.hidden{display:none!important}
-#load{text-align:center;margin-top:2rem}
-.sp{width:40px;height:40px;border:4px solid rgba(79,70,229,.2);border-top:4px solid var(--p);border-radius:50%;animation:spin 1s linear infinite;margin:0 auto 1rem}
-@keyframes spin{to{transform:rotate(360deg)}}
-.res{margin-top:2rem}.rh{display:flex;justify-content:space-between;align-items:center;margin-bottom:1.5rem}
-.mg{display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:1.5rem}
-.mc{background:#fff;padding:1.25rem;border-radius:1rem;text-align:center}
-.mc h3{font-size:2rem;color:var(--p)}.mc p{font-size:.85rem;color:#6B7280;text-transform:uppercase;letter-spacing:.05em;font-weight:600}
-.ac{background:#fff;padding:2rem;border-radius:1rem;line-height:1.65;color:#1F2937}
-.ac h1,.ac h2,.ac h3{margin:1.5rem 0 .6rem}.ac p{margin-bottom:.9rem}
-.ac table{width:100%;border-collapse:collapse;margin-bottom:1.5rem}.ac th,.ac td{padding:.65rem;border:1px solid #E5E7EB}
-.sm{margin-top:1.5rem;padding:1.25rem;background:#F3F4F6;border-radius:1rem;border-left:4px solid var(--s);font-size:.92rem}
-.sm p{margin-bottom:.4rem}
-</style></head><body>
-<div class="g g1"></div><div class="g g2"></div>
-<div class="w">
-<h1>🥗 Healthy Gut AI</h1>
-<p class="s">Medically accurate, SEO-optimised gut health articles — generated instantly.</p>
-<div class="c">
-  <form id="frm">
-    <div class="f"><label>Article Topic</label><input name="topic" placeholder="e.g. Irritable Bowel Syndrome" required></div>
-    <div class="f"><label>Primary Keyword</label><input name="primary_keyword" placeholder="e.g. IBS symptoms" required></div>
-    <div class="f r">
-      <div class="col"><label>Geo-Target</label><input name="geo_target" placeholder="e.g. New York, USA" required></div>
-      <div class="col"><label>Article Type</label>
-        <select name="article_type"><option value="pillar">Pillar (2500+ w)</option><option value="supporting">Supporting (1000+ w)</option></select>
-      </div>
-    </div>
-    <button class="btn" id="btn" type="submit">✨ Generate Article</button>
-  </form>
-  <div id="load" class="hidden"><div class="sp"></div><p>Consulting RAG knowledge base and synthesising…</p></div>
-</div>
-<div id="res" class="res hidden c"></div>
-</div>
-<script>
-document.getElementById('frm').addEventListener('submit',async e=>{
-  e.preventDefault();
-  const btn=document.getElementById('btn'),ld=document.getElementById('load'),rs=document.getElementById('res');
-  btn.disabled=true;ld.classList.remove('hidden');rs.classList.add('hidden');
-  try{
-    const r=await fetch('/generate',{method:'POST',body:new FormData(e.target)});
-    const d=await r.json();
-    if(!r.ok||d.error){alert('Error: '+(d.error||'Server error'));return;}
-    const den=d.metrics?.keywordDensity?.keywordDensityPercent??0;
-    const rd=d.metrics?.readability?.fleschReadingEase??0;
-    rs.innerHTML=`<div class="rh"><h2>Generated Article</h2>
-      <button class="btn" style="width:auto;padding:.5rem 1.2rem;margin:0" onclick="window.print()">Print/PDF</button></div>
-      <div class="mg"><div class="mc"><h3>${den}%</h3><p>Keyword Density</p></div>
-      <div class="mc"><h3>${rd}</h3><p>Readability</p></div></div>
-      <div class="ac">${marked.parse(d.optimized_article_markdown||'')}</div>
-      <div class="sm"><p><strong>Meta:</strong> ${d.meta_description||''}</p>
-      <p><strong>Slug:</strong> /${d.url_slug||''}</p>
-      <p><strong>CTA:</strong> ${d.cta_direct||''}</p></div>`;
-    rs.classList.remove('hidden');rs.scrollIntoView({behavior:'smooth'});
-  }catch(err){alert('Connection failed.');}
-  finally{btn.disabled=false;ld.classList.add('hidden');}
-});
-</script></body></html>"""
+# ✅ FIX 2: Mount static files so CSS/JS load correctly
+app.mount("/static", StaticFiles(directory="static"), name="static")
+
 
 @app.get("/health")
 def health():
@@ -209,9 +133,10 @@ def health():
 def debug():
     return {"routes": [r.path for r in app.routes]}
 
+# ✅ FIX 3: Serve static/index.html instead of inline HTML string
 @app.get("/", response_class=HTMLResponse)
 def root():
-    return HTMLResponse(content=UI)
+    return FileResponse("static/index.html")
 
 @app.post("/generate")
 async def generate(
