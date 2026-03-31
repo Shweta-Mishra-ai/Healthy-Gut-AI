@@ -1,274 +1,217 @@
-🎯 Healthy-Gut-AI
-AI-Powered Medical Content Generation System
+# 🥗 Healthy Gut AI
 
-This repository contains my solution for Problem.
-It demonstrates my ability to work with:
+<div align="center">
 
-🔹 LLM prompt engineering
+![Python](https://img.shields.io/badge/Python-3.11-3776AB?style=for-the-badge&logo=python&logoColor=white)
+![FastAPI](https://img.shields.io/badge/FastAPI-0.100+-009688?style=for-the-badge&logo=fastapi&logoColor=white)
+![OpenAI](https://img.shields.io/badge/OpenAI-GPT--4o-412991?style=for-the-badge&logo=openai&logoColor=white)
+![Railway](https://img.shields.io/badge/Deployed-Railway-0B0D0E?style=for-the-badge&logo=railway&logoColor=white)
+![Status](https://img.shields.io/badge/Status-Live-brightgreen?style=for-the-badge)
 
-🔹 n8n workflows
+**AI-powered medical content generation system — producing SEO-optimised, medically accurate gut health articles instantly.**
 
-🔹 SEO optimization
+[Live Demo](#) · [Report Bug](../../issues) · [Request Feature](../../issues)
 
-🔹 Readability + keyword metrics
-
-🔹 GitHub version-control
-
-🔹 Modular and scalable AI pipelines
-
-🧠 Project Purpose
-
-Healthy-Gut-AI automatically generates medically accurate, SEO-optimized, and readability-checked articles on gut health topics using:
-
-✨ LLM Prompts
-
-✨ JS Metrics Scripts
-
-✨ n8n Automation
-
-✨ Google Sheets Inputs
-
-This showcases real workflow automation + AI engineering skills.
-
-💻 **Quick Start (Standalone):**
-
-Run the example script to see metrics in action:
-
-```bash
-node example_standalone.js
-```
-
-Or use the metrics scripts directly:
-
-```bash
-# Keyword density
-node metrics/keyword_density.js "<article text>" "<keyword>"
-
-# Readability check  
-node metrics/readability_check.js "<article text>"
-```
-
-📁 Repository Structure
-Healthy-Gut-AI/
-│
-├── prompts/
-│   ├── prompt1_medical_seo_article.txt
-│   └── prompt2_geo_ai_optimization.txt
-│
-├── metrics/
-│   ├── keyword_density.js
-│   └── readability_check.js
-│
-├── example_standalone.js
-│
-├── samples/
-│   ├── article1_pillar.md
-│   └── article2_supporting.md
-│
-└── README.md
-
-
-Each folder has a specific purpose to keep the workflow modular and scalable.
-
-✍️ Prompt Details
-🔹 Prompt 1 — Medical SEO Article Generator
-
-Designed to create:
-
-Medically accurate articles
-
-Pillar (2500–3000 words) or Supporting (1000–1500 words)
-
-Structured headings
-
-Comparison tables
-
-Diet recommendations
-
-Keyword optimization
-
-Medical disclaimers
-
-🔹 Prompt 2 — Geo-Optimized SEO Enhancer
-
-Adds:
-
-Location-based optimization
-
-Meta description
-
-URL slug
-
-FAQs
-
-Schema (JSON-LD)
-
-Featured snippet improvements
-
-CTAs
-
-🧮 Metrics Scripts
-📌 keyword_density.js
-
-Calculates:
-
-Total words
-
-Keyword count
-
-Keyword density (%)
-
-Ensures SEO quality.
-
-✅ **Supports both n8n workflows and standalone Node.js execution**
-
-**Usage:**
-- **n8n:** Automatically uses `$json.optimized_article_markdown` and `$json.primary_keyword`
-- **Standalone:** `node metrics/keyword_density.js "<article>" "<keyword>"`
-
-📌 readability_check.js
-
-Calculates:
-
-Flesch Reading Ease score
-
-Sentence complexity
-
-Syllables per word
-
-Ensures the article is readable for a general audience.
-
-✅ **Supports both n8n workflows and standalone Node.js execution**
-
-**Usage:**
-- **n8n:** Automatically uses `$json.optimized_article_markdown`
-- **Standalone:** `node metrics/readability_check.js "<article>"`
-
-⚙️ Workflow Overview (n8n)
-1️⃣ Google Sheet Input
-
-topic
-
-primary_keyword
-
-geo_target
-
-article_type
-
-2️⃣ Workflow 1
-
-➡ Outline generator
-
-3️⃣ Workflow 2
-
-➡ Draft generation using Prompt 1
-
-4️⃣ Workflow 3
-
-➡ Optimization using Prompt 2
-➡ Keyword density + readability checks (metrics scripts)
-
-5️⃣ Save outputs inside /samples/
-📝 Sample Outputs
-
-✔ article1_pillar.md — Pillar article sample
-✔ article2_supporting.md — Supporting article sample
-
-These demonstrate how the pipeline generates structured, human-readable content.
-
-🧩 Architecture Diagram (Text Version)
-Google Sheet → n8n Workflow 1 (Outline)
-            → n8n Workflow 2 (Prompt 1 → Draft)
-            → n8n Workflow 3 (Prompt 2 → Optimization)
-            → Metrics JS (Density + Readability)
-            → Final Output (samples/)
-
-🎥 Demo Video Guidelines
-
-Your demo video should show:
-
-GitHub repository
-
-prompts folder
-
-metrics folder
-
-samples outputs
-
-n8n workflows
-
-Running the workflow
-
-Article generation
-
-Explanation of logic
-
-Summary
-
-🚀 Conclusion
-
-This project fully satisfies Problem 1 of the assignment by showing strong skills in:
-
-AI automation
-
-Workflow engineering
-
-Prompt design
-
-SEO-focused content generation
-
-GitHub versioning
-
-JS scripting
-
-This repository is a clean, professional example of an AI-powered content generation pipeline.
-
-🙌 Thank You
-
-If you’d like to explore the workflow or ask questions, feel free!
-# 🥗 Healthy-Gut-AI: Medical Content Generation System
-
-![Status](https://img.shields.io/badge/Status-Active-success?style=for-the-badge)
-![n8n](https://img.shields.io/badge/n8n-Workflow_Automation-FF6D5A?style=for-the-badge&logo=n8n&logoColor=white)
-![AI](https://img.shields.io/badge/GenAI-LLM_Engineering-blue?style=for-the-badge)
-
-> **✅ Latest Update:** Metrics scripts (`keyword_density.js` and `readability_check.js`) now support both n8n workflows and standalone Node.js execution. Fixed ReferenceError when running scripts outside n8n context.
-
-### 🏥 Project Overview
-**Healthy-Gut-AI** is an automated pipeline designed to generate medically accurate, SEO-optimized, and readability-checked content. It solves the problem of creating high-quality medical articles at scale by combining **Large Language Models (LLMs)** with **Rigorous Verification Metrics**.
-
-### 🚀 Key Features
-* **🤖 LLM Prompt Engineering:** Advanced prompts designed to hallucination-proof medical advice.
-* **⚙️ n8n Automation:** End-to-end workflow management from topic selection to draft generation.
-* **🔍 SEO Optimization:** Auto-insertion of keywords, meta-tags, and Schema markup.
-* **📊 Quality Metrics:** Custom scripts to calculate Readability Scores and Keyword Density before publishing.
-
-### 📂 Repository Structure
-This project is modular to ensure scalability:
-* `prompts/` - Contains engineered prompts for Medical Accuracy & Geo-Targeting.
-* `metrics/` - JavaScript tools for `keyword_density.js` and `readability_check.js`. Works in both n8n and standalone modes.
-* `samples/` - Example output articles (Pillar Content & Supporting Blogs).
-* `workflows/` - (Currently Updating) n8n JSON workflow files.
-
-### 🧠 Logic & Engineering
-#### 1. Medical SEO Generator (Prompt 1)
-Designed to create strict "Pillar Content" (2500+ words) that includes:
-* Comparison Tables & Diet Plans.
-* Medical Disclaimers & Citations.
-* Structured H1, H2, H3 hierarchy.
-
-#### 2. Geo-Optimization Engine (Prompt 2)
-Enhances content for local search intent:
-* Adds Location-based keywords.
-* Generates FAQ Schema (JSON-LD).
-* Optimizes Meta Descriptions for higher CTR.
-
-### 🛠 Tech Stack
-* **Core:** JavaScript, n8n (Workflow Automation)
-* **AI Models:** GPT-4 / Claude (via API)
-* **Data:** Google Sheets (Input Source)
-* **Version Control:** Git & GitHub
+</div>
 
 ---
-*Developed by Shweta Mishra | Focusing on AI Agentic Workflows.*
 
+## 🧠 What It Does
+
+Healthy Gut AI is a **FastAPI web application** that generates professional, geo-targeted gut health articles using:
+
+- **RAG (Retrieval-Augmented Generation)** — grounded medical knowledge base prevents hallucinations
+- **Dual-prompt pipeline** — Prompt 1 writes the article, Prompt 2 optimises it for SEO + geo-targeting
+- **Built-in quality metrics** — Flesch Readability Score + Keyword Density calculated on every output
+- **Mock mode** — works without an API key for demo/portfolio purposes
+
+---
+
+## 🏗️ Architecture
+
+```
+User Input (Topic + Keyword + Geo + Type)
+         │
+         ▼
+   FastAPI Backend
+         │
+         ├─► RAG Context Lookup (in-memory knowledge base)
+         │
+         ├─► LLM Pipeline
+         │     ├─ Prompt 1 → Medical SEO Article (GPT-4o)
+         │     └─ Prompt 2 → Geo-Optimisation + JSON output (GPT-4o)
+         │
+         └─► Quality Metrics
+               ├─ Flesch Reading Ease Score
+               └─ Keyword Density %
+                        │
+                        ▼
+              Rendered Output (Markdown → HTML)
+              Meta Description · URL Slug · FAQs · CTAs · Schema JSON-LD
+```
+
+---
+
+## 🚀 Tech Stack
+
+| Layer | Technology |
+|---|---|
+| Backend | Python 3.11, FastAPI, Uvicorn |
+| AI | OpenAI GPT-4o (with mock fallback) |
+| RAG | In-memory knowledge base (Pydantic models) |
+| Frontend | Vanilla JS, Marked.js, CSS Glass UI |
+| Deployment | Railway (Procfile + ENV vars) |
+| Serverless | Mangum (AWS Lambda / Vercel compatible) |
+
+---
+
+## 📁 Project Structure
+
+```
+Healthy-Gut-AI/
+│
+├── main.py                    # FastAPI app — routes, LLM logic, metrics
+├── Procfile                   # Railway deployment config
+├── requirements.txt           # Python dependencies
+│
+├── api/
+│   └── index.py               # Mangum serverless wrapper (Vercel/Lambda)
+│
+├── static/
+│   ├── index.html             # Frontend UI
+│   ├── style.css              # Glass morphism design
+│   └── app.js                 # Form submit + results render logic
+│
+├── prompts/
+│   ├── prompt1_medical_seo_article.txt     # Medical article generation prompt
+│   └── prompt2_geo_ai_optimization.txt     # Geo-SEO optimisation prompt
+│
+└── samples/
+    ├── article1_pillar.md     # Sample pillar article output
+    └── article2_supporting.md # Sample supporting article output
+```
+
+---
+
+## ⚙️ Local Setup
+
+### 1. Clone & Install
+
+```bash
+git clone https://github.com/Shweta-Mishra-ai/Healthy-Gut-AI.git
+cd Healthy-Gut-AI
+pip install -r requirements.txt
+```
+
+### 2. Environment Variables
+
+Create a `.env` file (optional — app runs in mock mode without it):
+
+```env
+OPENAI_API_KEY=sk-your-key-here
+```
+
+### 3. Run
+
+```bash
+uvicorn main:app --reload --port 8000
+```
+
+Open → `http://localhost:8000`
+
+---
+
+## 🌐 Deploy on Railway
+
+### Step 1 — Connect Repo
+Push to GitHub → Railway Dashboard → **New Project** → **Deploy from GitHub repo**
+
+### Step 2 — Set Environment Variables
+Railway Dashboard → Your Service → **Variables** tab:
+
+| Variable | Value |
+|---|---|
+| `OPENAI_API_KEY` | `sk-your-openai-key` |
+
+> **Note:** If `OPENAI_API_KEY` is not set, the app runs in **mock mode** (returns template articles). This is fine for demo/portfolio.
+
+### Step 3 — Deploy
+Railway auto-detects the `Procfile` and deploys. No extra config needed.
+
+```
+web: uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000}
+```
+
+---
+
+## 🔌 API Endpoints
+
+| Method | Endpoint | Description |
+|---|---|---|
+| `GET` | `/` | Frontend UI |
+| `POST` | `/generate` | Generate article (form data) |
+| `GET` | `/health` | Health check |
+| `GET` | `/debug` | List all routes |
+
+### POST `/generate` — Request Body (form-data)
+
+| Field | Type | Example |
+|---|---|---|
+| `topic` | string | `Irritable Bowel Syndrome` |
+| `primary_keyword` | string | `IBS symptoms` |
+| `geo_target` | string | `New York, USA` |
+| `article_type` | `pillar` / `supporting` | `pillar` |
+
+### Response
+
+```json
+{
+  "optimized_article_markdown": "# IBS Guide...",
+  "meta_description": "Learn about IBS symptoms...",
+  "url_slug": "irritable-bowel-syndrome-guide",
+  "faqs": [...],
+  "schema_json_ld": {...},
+  "cta_soft": "Explore more resources...",
+  "cta_direct": "Try Healthy Gut AI FREE...",
+  "metrics": {
+    "readability": { "fleschReadingEase": 62.4 },
+    "keywordDensity": { "keywordDensityPercent": 1.8 }
+  }
+}
+```
+
+---
+
+## 🧪 Features
+
+- ✅ **Mock mode** — works without OpenAI key (portfolio-safe)
+- ✅ **RAG grounding** — IBS, IBD, Gut Microbiome knowledge base
+- ✅ **Geo-targeting** — location-aware content optimisation
+- ✅ **Dual article types** — Pillar (2500+ words) / Supporting (1000+ words)
+- ✅ **SEO metrics** — Keyword Density + Flesch Readability Score
+- ✅ **Schema JSON-LD** — structured data for Google rich snippets
+- ✅ **Print/PDF export** — one-click via browser print dialog
+- ✅ **Serverless ready** — Mangum wrapper for AWS Lambda / Vercel
+
+---
+
+## 🗺️ Roadmap
+
+- [ ] Expand RAG knowledge base (GERD, Crohn's, Celiac)
+- [ ] Add Groq Llama 3.3 70B as free-tier LLM fallback
+- [ ] Bulk article generation (CSV input)
+- [ ] Export to DOCX / PDF
+- [ ] Article history with local storage
+
+---
+
+## 👩‍💻 Author
+
+**Shweta Mishra** — AI/ML Engineer & Open Source Builder
+
+[![GitHub](https://img.shields.io/badge/GitHub-Shweta--Mishra--ai-181717?style=flat&logo=github)](https://github.com/Shweta-Mishra-ai)
+[![LinkedIn](https://img.shields.io/badge/LinkedIn-Connect-0077B5?style=flat&logo=linkedin)](https://linkedin.com/in/shweta-mishra)
+
+---
+
+*Built with FastAPI + OpenAI GPT-4o. Deployed on Railway.*
