@@ -1,0 +1,22 @@
+name: Sync to Hugging Face Spaces
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  sync-to-hf:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      - name: Push to HF Space
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          git config --global user.email "shweta@healthy-gut-ai.com"
+          git config --global user.name "Shweta Mishra"
+          git push https://Shwetam242:$HF_TOKEN@huggingface.co/spaces/Shwetam242/Healthy-Gut-AI main --force
