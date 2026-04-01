@@ -1,178 +1,214 @@
-# 🥗 Healthy Gut AI
+---
+title: Healthy Gut AI
+emoji: 🥗
+colorFrom: indigo
+colorTo: green
+sdk: docker
+app_port: 7860
+pinned: false
+license: mit
+short_description: AI-powered medical SEO article generator for gut health
+---
 
 <div align="center">
 
-![Python](https://img.shields.io/badge/Python-3.11-3776AB?style=for-the-badge&logo=python&logoColor=white)
-![FastAPI](https://img.shields.io/badge/FastAPI-0.100+-009688?style=for-the-badge&logo=fastapi&logoColor=white)
-![OpenAI](https://img.shields.io/badge/OpenAI-GPT--4o-412991?style=for-the-badge&logo=openai&logoColor=white)
-![Railway](https://img.shields.io/badge/Deployed-Railway-0B0D0E?style=for-the-badge&logo=railway&logoColor=white)
-![Status](https://img.shields.io/badge/Status-Live-brightgreen?style=for-the-badge)
+<img src="https://img.shields.io/badge/version-2.0-blue?style=for-the-badge" />
+<img src="https://img.shields.io/badge/Python-3.11-3776AB?style=for-the-badge&logo=python&logoColor=white" />
+<img src="https://img.shields.io/badge/FastAPI-009688?style=for-the-badge&logo=fastapi&logoColor=white" />
+<img src="https://img.shields.io/badge/OpenAI-GPT--4o-412991?style=for-the-badge&logo=openai&logoColor=white" />
+<img src="https://img.shields.io/badge/Deployed-HuggingFace_Spaces-FFD21E?style=for-the-badge&logo=huggingface&logoColor=black" />
+<img src="https://img.shields.io/badge/License-MIT-green?style=for-the-badge" />
 
-**AI-powered medical content generation system — producing SEO-optimised, medically accurate gut health articles instantly.**
+# 🥗 Healthy Gut AI
 
-[Live Demo](#) · [Report Bug](../../issues) · [Request Feature](../../issues)
+**Production-grade AI content engine for medically accurate, SEO-optimised gut health articles.**
+
+[🚀 Live Demo](https://shwetam242-healthy-gut-ai.hf.space) · [🐛 Issues](../../issues) · [⭐ Star this repo](../../stargazers)
+
+> **If this project helped you or impressed you — a ⭐ star means a lot and keeps this project alive!**
 
 </div>
 
 ---
 
-## 🧠 What It Does
+## 🧭 Project Journey
 
-Healthy Gut AI is a **FastAPI web application** that generates professional, geo-targeted gut health articles using:
+This project has gone through two major versions — each solving real engineering problems.
 
-- **RAG (Retrieval-Augmented Generation)** — grounded medical knowledge base prevents hallucinations
-- **Dual-prompt pipeline** — Prompt 1 writes the article, Prompt 2 optimises it for SEO + geo-targeting
-- **Built-in quality metrics** — Flesch Readability Score + Keyword Density calculated on every output
-- **Mock mode** — works without an API key for demo/portfolio purposes
+### V1 — n8n Automation Pipeline
+The original version was built as an **n8n workflow automation**:
+- Google Sheets as input source
+- LLM prompts chained via n8n nodes
+- JavaScript scripts for keyword density and readability scoring
+- Output saved to `/samples/` folder
+
+**Limitations hit:** Workflows were brittle, no public UI, JS metrics ran in isolation, and the whole system was hard to deploy and share.
+
+### V2 — Production FastAPI Web App ← *current*
+A complete re-engineering from the ground up:
+
+| What changed | V1 | V2 |
+|---|---|---|
+| Runtime | n8n nodes | FastAPI backend |
+| Metrics | Standalone JS scripts | Python, integrated into API |
+| Knowledge | Raw prompts | RAG knowledge base |
+| UI | None | Glass morphism web app |
+| Deployment | Local / n8n cloud | Hugging Face Spaces (Docker) |
+| Sync | Manual | GitHub Actions → HF auto-deploy |
+
+> This isn't just a rewrite. It's an architectural decision — knowing **when to refactor** is as important as knowing how to build.
+
+---
+
+## ✨ What It Does
+
+Takes four inputs, returns a fully production-ready medical article in seconds:
+
+```
+Topic          →  "Irritable Bowel Syndrome"
+Keyword        →  "IBS symptoms and treatment"
+Geo-Target     →  "Mumbai, India"
+Article Type   →  Pillar (2500+ words) | Supporting (1000+ words)
+```
+
+**Output:**
+- Full Markdown article with H1/H2/H3 hierarchy
+- Flesch Readability Score + Keyword Density %
+- SEO Meta Description + clean URL Slug
+- FAQ section (schema-ready JSON)
+- JSON-LD Schema markup (Google rich snippets)
+- Geo-targeted Soft CTA + Direct CTA
 
 ---
 
 ## 🏗️ Architecture
 
 ```
-User Input (Topic + Keyword + Geo + Type)
-         │
-         ▼
-   FastAPI Backend
-         │
-         ├─► RAG Context Lookup (in-memory knowledge base)
-         │
-         ├─► LLM Pipeline
-         │     ├─ Prompt 1 → Medical SEO Article (GPT-4o)
-         │     └─ Prompt 2 → Geo-Optimisation + JSON output (GPT-4o)
-         │
-         └─► Quality Metrics
-               ├─ Flesch Reading Ease Score
-               └─ Keyword Density %
-                        │
-                        ▼
-              Rendered Output (Markdown → HTML)
-              Meta Description · URL Slug · FAQs · CTAs · Schema JSON-LD
+┌──────────────────────────────────────────────────┐
+│                   USER BROWSER                   │
+│        Topic · Keyword · Geo · Article Type      │
+└─────────────────────┬────────────────────────────┘
+                      │ POST /generate
+                      ▼
+┌──────────────────────────────────────────────────┐
+│               FASTAPI BACKEND                    │
+│                                                  │
+│  ┌───────────────┐    ┌────────────────────────┐ │
+│  │  RAG Engine   │───►│     LLM Pipeline       │ │
+│  │               │    │                        │ │
+│  │  · Gut Health │    │  Prompt 1              │ │
+│  │  · IBS / IBD  │    │  └─ Medical Draft      │ │
+│  │  · Microbiome │    │       (GPT-4o)         │ │
+│  └───────────────┘    │  Prompt 2              │ │
+│                       │  └─ SEO + Geo Optimise │ │
+│  ┌───────────────┐    │       (GPT-4o JSON)    │ │
+│  │ Metrics Engine│◄───└────────────────────────┘ │
+│  │               │                               │
+│  │ · Flesch Score│                               │
+│  │ · KW Density  │                               │
+│  └───────────────┘                               │
+└─────────────────────┬────────────────────────────┘
+                      │ JSON Response
+                      ▼
+┌──────────────────────────────────────────────────┐
+│  Article · Metrics · Meta · Slug · FAQs · Schema │
+└──────────────────────────────────────────────────┘
 ```
 
 ---
 
-## 🚀 Tech Stack
+## 🛠️ Tech Stack
 
 | Layer | Technology |
 |---|---|
 | Backend | Python 3.11, FastAPI, Uvicorn |
-| AI | OpenAI GPT-4o (with mock fallback) |
-| RAG | In-memory knowledge base (Pydantic models) |
+| AI | OpenAI GPT-4o (dual-prompt pipeline) |
+| RAG | In-memory medical knowledge base |
+| Metrics | Custom Python (Flesch + KW Density) |
 | Frontend | Vanilla JS, Marked.js, CSS Glass UI |
-| Deployment | Railway (Procfile + ENV vars) |
-| Serverless | Mangum (AWS Lambda / Vercel compatible) |
+| Deployment | Hugging Face Spaces (Docker) |
+| CI/CD | GitHub Actions → HF auto-sync |
 
 ---
 
-## 📁 Project Structure
+## 📁 Structure
 
 ```
 Healthy-Gut-AI/
-│
-├── main.py                    # FastAPI app — routes, LLM logic, metrics
-├── Procfile                   # Railway deployment config
-├── requirements.txt           # Python dependencies
-│
-├── api/
-│   └── index.py               # Mangum serverless wrapper (Vercel/Lambda)
-│
+├── main.py                          # FastAPI app, RAG, LLM, metrics
+├── Dockerfile                       # HF Spaces Docker config
+├── requirements.txt                 # Dependencies
 ├── static/
-│   ├── index.html             # Frontend UI
-│   ├── style.css              # Glass morphism design
-│   └── app.js                 # Form submit + results render logic
-│
+│   ├── index.html                   # Web UI
+│   ├── style.css                    # Glass morphism design
+│   └── app.js                       # Form logic + results render
 ├── prompts/
-│   ├── prompt1_medical_seo_article.txt     # Medical article generation prompt
-│   └── prompt2_geo_ai_optimization.txt     # Geo-SEO optimisation prompt
-│
-└── samples/
-    ├── article1_pillar.md     # Sample pillar article output
-    └── article2_supporting.md # Sample supporting article output
+│   ├── prompt1_medical_seo_article.txt
+│   └── prompt2_geo_ai_optimization.txt
+├── samples/
+│   ├── article1_pillar.md
+│   └── article2_supporting.md
+└── .github/workflows/
+    └── hf-sync.yml                  # Auto-deploy to HF on push
 ```
 
 ---
 
 ## ⚙️ Local Setup
 
-### 1. Clone & Install
-
 ```bash
 git clone https://github.com/Shweta-Mishra-ai/Healthy-Gut-AI.git
 cd Healthy-Gut-AI
 pip install -r requirements.txt
+
+# Optional — without this, mock mode runs
+export OPENAI_API_KEY=sk-your-key
+
+uvicorn main:app --reload --port 7860
+# Open: http://localhost:7860
 ```
 
-### 2. Environment Variables
+> **No API key?** App runs in **mock mode** — returns structured template articles with real metrics. Safe for demos.
 
-Create a `.env` file (optional — app runs in mock mode without it):
+---
 
-```env
-OPENAI_API_KEY=sk-your-key-here
-```
-
-### 3. Run
+## 🌐 Deploy (Hugging Face Spaces)
 
 ```bash
-uvicorn main:app --reload --port 8000
+# Auto-deploys via GitHub Actions on every push to main
+# Manual trigger: edit any file → commit → push
 ```
 
-Open → `http://localhost:8000`
+Or set up from scratch:
+1. New Space → SDK: `Docker` → Port: `7860`
+2. Link GitHub repo
+3. Add secret: `OPENAI_API_KEY`
+4. Done — builds automatically
 
 ---
 
-## 🌐 Deploy on Railway
+## 🔌 API
 
-### Step 1 — Connect Repo
-Push to GitHub → Railway Dashboard → **New Project** → **Deploy from GitHub repo**
+### `POST /generate`
 
-### Step 2 — Set Environment Variables
-Railway Dashboard → Your Service → **Variables** tab:
-
-| Variable | Value |
-|---|---|
-| `OPENAI_API_KEY` | `sk-your-openai-key` |
-
-> **Note:** If `OPENAI_API_KEY` is not set, the app runs in **mock mode** (returns template articles). This is fine for demo/portfolio.
-
-### Step 3 — Deploy
-Railway auto-detects the `Procfile` and deploys. No extra config needed.
-
-```
-web: uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000}
+```bash
+curl -X POST https://shwetam242-healthy-gut-ai.hf.space/generate \
+  -F "topic=IBS" \
+  -F "primary_keyword=IBS symptoms" \
+  -F "geo_target=London, UK" \
+  -F "article_type=pillar"
 ```
 
----
-
-## 🔌 API Endpoints
-
-| Method | Endpoint | Description |
-|---|---|---|
-| `GET` | `/` | Frontend UI |
-| `POST` | `/generate` | Generate article (form data) |
-| `GET` | `/health` | Health check |
-| `GET` | `/debug` | List all routes |
-
-### POST `/generate` — Request Body (form-data)
-
-| Field | Type | Example |
-|---|---|---|
-| `topic` | string | `Irritable Bowel Syndrome` |
-| `primary_keyword` | string | `IBS symptoms` |
-| `geo_target` | string | `New York, USA` |
-| `article_type` | `pillar` / `supporting` | `pillar` |
-
-### Response
-
+**Response shape:**
 ```json
 {
-  "optimized_article_markdown": "# IBS Guide...",
-  "meta_description": "Learn about IBS symptoms...",
-  "url_slug": "irritable-bowel-syndrome-guide",
+  "optimized_article_markdown": "...",
+  "meta_description": "...",
+  "url_slug": "ibs-guide",
   "faqs": [...],
   "schema_json_ld": {...},
-  "cta_soft": "Explore more resources...",
-  "cta_direct": "Try Healthy Gut AI FREE...",
+  "cta_soft": "...",
+  "cta_direct": "...",
   "metrics": {
     "readability": { "fleschReadingEase": 62.4 },
     "keywordDensity": { "keywordDensityPercent": 1.8 }
@@ -180,38 +216,30 @@ web: uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000}
 }
 ```
 
----
-
-## 🧪 Features
-
-- ✅ **Mock mode** — works without OpenAI key (portfolio-safe)
-- ✅ **RAG grounding** — IBS, IBD, Gut Microbiome knowledge base
-- ✅ **Geo-targeting** — location-aware content optimisation
-- ✅ **Dual article types** — Pillar (2500+ words) / Supporting (1000+ words)
-- ✅ **SEO metrics** — Keyword Density + Flesch Readability Score
-- ✅ **Schema JSON-LD** — structured data for Google rich snippets
-- ✅ **Print/PDF export** — one-click via browser print dialog
-- ✅ **Serverless ready** — Mangum wrapper for AWS Lambda / Vercel
+### `GET /health` → `{"status": "ok"}`
 
 ---
 
 ## 🗺️ Roadmap
 
-- [ ] Expand RAG knowledge base (GERD, Crohn's, Celiac)
-- [ ] Add Groq Llama 3.3 70B as free-tier LLM fallback
-- [ ] Bulk article generation (CSV input)
-- [ ] Export to DOCX / PDF
-- [ ] Article history with local storage
+- [ ] Groq Llama 3.3 70B as free-tier LLM fallback
+- [ ] Expand RAG — GERD, Crohn's, Celiac Disease
+- [ ] Bulk generation via CSV upload
+- [ ] DOCX / PDF export
+- [ ] Article history
 
 ---
 
-## 👩‍💻 Author
+## 📜 License
 
-**Shweta Mishra** — AI/ML Engineer & Open Source Builder
-
-[![GitHub](https://img.shields.io/badge/GitHub-Shweta--Mishra--ai-181717?style=flat&logo=github)](https://github.com/Shweta-Mishra-ai)
-[![LinkedIn](https://img.shields.io/badge/LinkedIn-Connect-0077B5?style=flat&logo=linkedin)](https://linkedin.com/in/shweta-mishra)
+MIT — free to use, modify, and distribute with attribution. See [LICENSE](LICENSE).
 
 ---
 
-*Built with FastAPI + OpenAI GPT-4o. Deployed on Railway.*
+<div align="center">
+
+**⭐ Found this useful? Star it — it genuinely helps! ⭐**
+
+*FastAPI · OpenAI GPT-4o · Hugging Face Spaces · GitHub Actions*
+
+</div>
