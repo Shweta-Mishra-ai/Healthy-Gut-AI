@@ -1,10 +1,9 @@
 import os
 import json
 import re
-import asyncio
 from fastapi import FastAPI, Form
 from fastapi.responses import HTMLResponse, JSONResponse, FileResponse
-from fastapi.staticfiles import StaticFiles  # ✅ FIX 1: Added missing import
+from fastapi.staticfiles import StaticFiles
 
 # ====== RAG Knowledge Base ======
 KNOWLEDGE_BASE = {
@@ -18,8 +17,6 @@ def rag_context(topic: str) -> str:
     chunks = [v for k, v in KNOWLEDGE_BASE.items() if k in t]
     return " ".join(chunks) if chunks else KNOWLEDGE_BASE["gut"]
 
-
-# ====== Metrics ======
 def keyword_density(text: str, kw: str) -> dict:
     words = re.findall(r'\S+', text.lower())
     total = len(words) or 1
@@ -37,14 +34,11 @@ def readability(text: str) -> dict:
     score = round(206.835 - 1.015*(nw/sentences) - 84.6*(syllables/nw), 2)
     return {"fleschReadingEase": score}
 
-
-# ====== LLM Generate ======
 async def llm_generate(topic, keyword, geo, article_type):
     api_key = os.getenv("OPENAI_API_KEY", "")
     ctx = rag_context(topic)
 
     if not api_key:
-        # Mock response when no API key set
         article = f"""# {topic.title()}: Your Complete Guide
 
 **{keyword}** is one of the most searched topics in gut health today.
@@ -74,7 +68,7 @@ If symptoms persist for more than 3 weeks, consult a gastroenterologist in **{ge
 
         return {
             "optimized_article_markdown": article,
-            "meta_description": f"Learn about {keyword} with our expert guide targeting {geo}. Find symptoms, diet tips, and when to seek help.",
+            "meta_description": f"Learn about {keyword} with our expert guide targeting {geo}.",
             "url_slug": topic.lower().replace(" ", "-") + "-guide",
             "faqs": [
                 {"question": f"What is {topic}?", "answer": ctx},
@@ -85,7 +79,6 @@ If symptoms persist for more than 3 weeks, consult a gastroenterologist in **{ge
             "cta_direct": f"Try Healthy Gut AI FREE today — personalized plans for {geo}!"
         }
 
-    # Real OpenAI call
     try:
         from openai import AsyncOpenAI
         client = AsyncOpenAI(api_key=api_key)
@@ -96,44 +89,24 @@ MEDICAL CONTEXT (RAG): {ctx}
 Word count: {'2500-3000' if article_type=='pillar' else '1000-1500'} words.
 Include: H1 with keyword, comparison table, diet section, medical disclaimer.
 Output: Markdown only."""
-
-        r1 = await client.chat.completions.create(
-            model="gpt-4o",
-            messages=[{"role":"user","content":prompt1}]
-        )
+        r1 = await client.chat.completions.create(model="gpt-4o", messages=[{"role":"user","content":prompt1}])
         draft = r1.choices[0].message.content
-
         prompt2 = f"""Optimize this article for SEO and geo-target {geo}.
 Article: {draft}
 Keyword: {keyword}
 Return JSON with keys: optimized_article_markdown, meta_description, url_slug, faqs, schema_json_ld, cta_soft, cta_direct"""
-
-        r2 = await client.chat.completions.create(
-            model="gpt-4o",
-            response_format={"type":"json_object"},
-            messages=[{"role":"user","content":prompt2}]
-        )
+        r2 = await client.chat.completions.create(model="gpt-4o", response_format={"type":"json_object"}, messages=[{"role":"user","content":prompt2}])
         return json.loads(r2.choices[0].message.content)
     except Exception as e:
         return {"error": str(e)}
 
-
-# ====== FastAPI App ======
 app = FastAPI(title="Healthy Gut AI")
-
-# ✅ FIX 2: Mount static files so CSS/JS load correctly
 app.mount("/static", StaticFiles(directory="static"), name="static")
-
 
 @app.get("/health")
 def health():
     return {"status": "ok"}
 
-@app.get("/debug")
-def debug():
-    return {"routes": [r.path for r in app.routes]}
-
-# ✅ FIX 3: Serve static/index.html instead of inline HTML string
 @app.get("/", response_class=HTMLResponse)
 def root():
     return FileResponse("static/index.html")
@@ -160,4 +133,5 @@ async def generate(
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("main:app", host="0.0.0.0", port=int(os.getenv("PORT", 8000)))
+    port = int(os.getenv("PORT", 7860))
+    uvicorn.run("main:app", host="0.0.0.0", port=port)
