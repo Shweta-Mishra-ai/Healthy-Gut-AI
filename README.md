@@ -1,5 +1,5 @@
 ---
-Title: Healthy Gut AI
+title: Healthy Gut AI
 emoji: 🥗
 colorFrom: indigo
 colorTo: green
