@@ -75,7 +75,7 @@ V2 replaces the entire pipeline with a FastAPI backend. The JS metric scripts ar
 | Metrics | Custom Python | Flesch Reading Ease, KW density |
 | Frontend | Vanilla JS + Marked.js | Zero build tooling |
 | Deploy | HF Spaces (Docker) | Free, persistent, public URL |
-| CI/CD | GitHub Actions | Push-to-deploy on `main` |
+| CI/CD | GitHub Actions | Push-to-deploy on main |
 
 ---
 
@@ -84,7 +84,7 @@ V2 replaces the entire pipeline with a FastAPI backend. The JS metric scripts ar
 ### V1 — n8n Automation
 - **Input:** Google Sheets
 - **Pipeline:** n8n nodes → LLM prompts → JS metric scripts
-- **Output:** Markdown files in `/samples`
+- **Output:** Markdown files in /samples
 - **Problem:** Brittle workflows, no UI, hard to share, metrics isolated from pipeline
 
 ### V2 — FastAPI App (current)
@@ -104,7 +104,7 @@ pip install -r requirements.txt
 uvicorn main:app --reload --port 7860
 ```
 
-App runs in **mock mode** without `OPENAI_API_KEY` — returns structured template articles with real metric calculations. Useful for UI development and demos.
+App runs in **mock mode** without OPENAI_API_KEY — returns structured template articles with real metric calculations.
 
 ```bash
 export OPENAI_API_KEY=sk-...   # optional
@@ -134,10 +134,8 @@ Response:
   "optimized_article_markdown": "...",
   "meta_description": "...",
   "url_slug": "ibs-symptoms-guide",
-  "faqs": [...],
-  "schema_json_ld": { "@type": "Article", ... },
-  "cta_soft": "...",
-  "cta_direct": "...",
+  "faqs": [],
+  "schema_json_ld": {},
   "metrics": {
     "readability": { "fleschReadingEase": 62.4 },
     "keywordDensity": { "keywordDensityPercent": 1.8 }
@@ -153,21 +151,14 @@ GET /health   →  { "status": "ok" }
 
 ## Deployment
 
-Auto-deploys to Hugging Face Spaces on every push to `main` via `.github/workflows/hf-sync.yml`.
-
-Manual deploy:
-
-```bash
-git remote add hf https://huggingface.co/spaces/Shwetam242/Healthy-Gut-AI
-git push hf main --force
-```
+Auto-deploys to Hugging Face Spaces on every push to main via .github/workflows/hf-sync.yml.
 
 Required secrets:
 
 | Secret | Where |
 |---|---|
-| `OPENAI_API_KEY` | HF Space → Settings → Secrets |
-| `HF_TOKEN` | GitHub repo → Settings → Actions secrets |
+| OPENAI_API_KEY | HF Space → Settings → Secrets |
+| HF_TOKEN | GitHub repo → Settings → Actions secrets |
 
 ---
 
@@ -175,7 +166,7 @@ Required secrets:
 
 ```
 .
-├── main.py                        # app, routes, RAG, LLM, metrics
+├── main.py
 ├── Dockerfile
 ├── requirements.txt
 ├── static/
@@ -198,10 +189,9 @@ Required secrets:
 ## Roadmap
 
 - [ ] Groq Llama 3.3 70B fallback for zero-cost inference
-- [ ] Expand RAG — GERD, Crohn's, Celiac, SIBO
+- [ ] Expand RAG — GERD, Crohns, Celiac, SIBO
 - [ ] Batch generation via CSV upload
 - [ ] DOCX / PDF export
-- [ ] Persistent article history
 
 ---
 
@@ -211,4 +201,4 @@ Required secrets:
 
 ---
 
-*If this project was useful, a ⭐ is appreciated.*
+*If this project was useful, a star is appreciated.*
