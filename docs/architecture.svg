@@ -1,0 +1,137 @@
+<svg width="1400" height="760" viewBox="0 0 1400 760" xmlns="http://www.w3.org/2000/svg" font-family="Segoe UI, Helvetica, Arial, sans-serif">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#0b1220"/>
+      <stop offset="100%" stop-color="#0f1729"/>
+    </linearGradient>
+    <linearGradient id="nodeBlue" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#1f3a63"/>
+      <stop offset="100%" stop-color="#152a4a"/>
+    </linearGradient>
+    <linearGradient id="nodeTeal" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0f4c4c"/>
+      <stop offset="100%" stop-color="#0b3535"/>
+    </linearGradient>
+    <linearGradient id="nodeAmber" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#5a3d12"/>
+      <stop offset="100%" stop-color="#402b0d"/>
+    </linearGradient>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L9,3 z" fill="#5eead4"/>
+    </marker>
+    <marker id="arrowDim" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L9,3 z" fill="#64748b"/>
+    </marker>
+  </defs>
+
+  <rect width="1400" height="760" fill="url(#bg)"/>
+
+  <text x="700" y="46" text-anchor="middle" fill="#e2e8f0" font-size="26" font-weight="700">Healthy Gut AI — Request Pipeline Architecture</text>
+  <text x="700" y="72" text-anchor="middle" fill="#94a3b8" font-size="14">Every request flows through independent, individually-failing-safe stages</text>
+
+  <!-- Row 1: primary pipeline -->
+  <!-- Client -->
+  <g>
+    <rect x="30" y="130" width="150" height="80" rx="14" fill="url(#nodeBlue)" stroke="#3b82f6" stroke-width="1.5"/>
+    <text x="105" y="163" text-anchor="middle" fill="#e2e8f0" font-size="15" font-weight="600">Client</text>
+    <text x="105" y="184" text-anchor="middle" fill="#94a3b8" font-size="11">Browser UI / API caller</text>
+  </g>
+  <line x1="180" y1="170" x2="222" y2="170" stroke="#5eead4" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <!-- Rate limiter -->
+  <g>
+    <rect x="224" y="130" width="170" height="80" rx="14" fill="url(#nodeAmber)" stroke="#f59e0b" stroke-width="1.5"/>
+    <text x="309" y="158" text-anchor="middle" fill="#e2e8f0" font-size="14" font-weight="600">Rate Limiter</text>
+    <text x="309" y="176" text-anchor="middle" fill="#cbd5e1" font-size="11">Sliding window / IP</text>
+    <text x="309" y="192" text-anchor="middle" fill="#94a3b8" font-size="10">429 if exceeded</text>
+  </g>
+  <line x1="394" y1="170" x2="436" y2="170" stroke="#5eead4" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <!-- Validation -->
+  <g>
+    <rect x="438" y="130" width="170" height="80" rx="14" fill="url(#nodeBlue)" stroke="#3b82f6" stroke-width="1.5"/>
+    <text x="523" y="158" text-anchor="middle" fill="#e2e8f0" font-size="14" font-weight="600">Validation</text>
+    <text x="523" y="176" text-anchor="middle" fill="#cbd5e1" font-size="11">Pydantic schemas</text>
+    <text x="523" y="192" text-anchor="middle" fill="#94a3b8" font-size="10">422 on bad input</text>
+  </g>
+  <line x1="608" y1="170" x2="650" y2="170" stroke="#5eead4" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <!-- Cache -->
+  <g>
+    <rect x="652" y="130" width="160" height="80" rx="14" fill="url(#nodeTeal)" stroke="#14b8a6" stroke-width="1.5"/>
+    <text x="732" y="158" text-anchor="middle" fill="#e2e8f0" font-size="14" font-weight="600">TTL Cache</text>
+    <text x="732" y="176" text-anchor="middle" fill="#cbd5e1" font-size="11">In-memory, hashed key</text>
+    <text x="732" y="192" text-anchor="middle" fill="#94a3b8" font-size="10">Hit → skip LLM entirely</text>
+  </g>
+  <line x1="812" y1="170" x2="854" y2="170" stroke="#5eead4" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <!-- LLM chain container -->
+  <rect x="856" y="100" width="330" height="290" rx="16" fill="#111a2e" stroke="#334155" stroke-width="1.5" stroke-dasharray="5,4"/>
+  <text x="1021" y="122" text-anchor="middle" fill="#94a3b8" font-size="12" font-weight="600">LLM FALLBACK CHAIN (cache miss only)</text>
+
+  <g>
+    <rect x="886" y="136" width="270" height="52" rx="10" fill="url(#nodeTeal)" stroke="#14b8a6" stroke-width="1.5"/>
+    <text x="1021" y="158" text-anchor="middle" fill="#e2e8f0" font-size="13" font-weight="600">1. Groq — Llama 3.3 70B (free)</text>
+    <text x="1021" y="176" text-anchor="middle" fill="#94a3b8" font-size="10">retry x2 + backoff + timeout</text>
+  </g>
+  <line x1="1021" y1="188" x2="1021" y2="204" stroke="#64748b" stroke-width="2" marker-end="url(#arrowDim)"/>
+  <text x="1060" y="200" fill="#64748b" font-size="10">on failure</text>
+
+  <g>
+    <rect x="886" y="206" width="270" height="52" rx="10" fill="url(#nodeBlue)" stroke="#3b82f6" stroke-width="1.5"/>
+    <text x="1021" y="228" text-anchor="middle" fill="#e2e8f0" font-size="13" font-weight="600">2. OpenRouter — free tier</text>
+    <text x="1021" y="246" text-anchor="middle" fill="#94a3b8" font-size="10">retry x2 + backoff + timeout</text>
+  </g>
+  <line x1="1021" y1="258" x2="1021" y2="274" stroke="#64748b" stroke-width="2" marker-end="url(#arrowDim)"/>
+  <text x="1060" y="270" fill="#64748b" font-size="10">on failure</text>
+
+  <g>
+    <rect x="886" y="276" width="270" height="52" rx="10" fill="url(#nodeAmber)" stroke="#f59e0b" stroke-width="1.5"/>
+    <text x="1021" y="298" text-anchor="middle" fill="#e2e8f0" font-size="13" font-weight="600">3. OpenAI — gpt-4o-mini (optional)</text>
+    <text x="1021" y="316" text-anchor="middle" fill="#94a3b8" font-size="10">paid, last resort</text>
+  </g>
+  <line x1="1021" y1="328" x2="1021" y2="344" stroke="#64748b" stroke-width="2" marker-end="url(#arrowDim)"/>
+  <text x="1060" y="340" fill="#64748b" font-size="10">on failure</text>
+
+  <g>
+    <rect x="886" y="346" width="270" height="38" rx="10" fill="#1e293b" stroke="#64748b" stroke-width="1.5"/>
+    <text x="1021" y="370" text-anchor="middle" fill="#e2e8f0" font-size="13" font-weight="600">4. Mock template — always succeeds</text>
+  </g>
+
+  <line x1="1186" y1="245" x2="1228" y2="245" stroke="#5eead4" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <!-- Metrics -->
+  <g>
+    <rect x="1230" y="130" width="140" height="80" rx="14" fill="url(#nodeTeal)" stroke="#14b8a6" stroke-width="1.5"/>
+    <text x="1300" y="163" text-anchor="middle" fill="#e2e8f0" font-size="14" font-weight="600">Metrics</text>
+    <text x="1300" y="181" text-anchor="middle" fill="#94a3b8" font-size="10">Readability + density</text>
+  </g>
+
+  <line x1="1300" y1="210" x2="1300" y2="238" stroke="#5eead4" stroke-width="2" marker-end="url(#arrow)"/>
+  <g>
+    <rect x="1200" y="240" width="200" height="60" rx="12" fill="url(#nodeBlue)" stroke="#3b82f6" stroke-width="1.5"/>
+    <text x="1300" y="266" text-anchor="middle" fill="#e2e8f0" font-size="13" font-weight="600">Response</text>
+    <text x="1300" y="284" text-anchor="middle" fill="#94a3b8" font-size="10">JSON / DOCX / PDF</text>
+  </g>
+
+  <!-- Cache write-back -->
+  <path d="M 1300 300 C 1300 420, 732 420, 732 210" fill="none" stroke="#475569" stroke-width="1.5" stroke-dasharray="4,4" marker-end="url(#arrowDim)"/>
+  <text x="1020" y="440" text-anchor="middle" fill="#64748b" font-size="11">cache write-back (new results only)</text>
+
+  <!-- Batch endpoint note -->
+  <rect x="30" y="470" width="1340" height="110" rx="14" fill="#111a2e" stroke="#334155" stroke-width="1.5"/>
+  <text x="50" y="498" fill="#e2e8f0" font-size="14" font-weight="700">Batch mode (/generate/batch)</text>
+  <text x="50" y="522" fill="#94a3b8" font-size="12">Up to MAX_BATCH_SIZE items run through the same pipeline concurrently,</text>
+  <text x="50" y="542" fill="#94a3b8" font-size="12">bounded by an asyncio.Semaphore (BATCH_CONCURRENCY) so a large batch can't</text>
+  <text x="50" y="562" fill="#94a3b8" font-size="12">overwhelm a free-tier provider's own rate limits.</text>
+
+  <!-- Legend -->
+  <rect x="30" y="610" width="16" height="16" rx="4" fill="url(#nodeTeal)" stroke="#14b8a6"/>
+  <text x="54" y="623" fill="#94a3b8" font-size="12">Free / no-cost stage</text>
+  <rect x="220" y="610" width="16" height="16" rx="4" fill="url(#nodeAmber)" stroke="#f59e0b"/>
+  <text x="244" y="623" fill="#94a3b8" font-size="12">Rate-sensitive / optional-cost stage</text>
+  <rect x="490" y="610" width="16" height="16" rx="4" fill="url(#nodeBlue)" stroke="#3b82f6"/>
+  <text x="514" y="623" fill="#94a3b8" font-size="12">Core application logic</text>
+
+  <text x="700" y="700" text-anchor="middle" fill="#475569" font-size="11">Healthy Gut AI v2 · docs/architecture.svg</text>
+</svg>
