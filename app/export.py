@@ -1,5 +1,7 @@
+import csv
 import io
 import re
+import zipfile
 
 
 def markdown_to_docx_bytes(title: str, markdown_text: str) -> bytes:
@@ -59,3 +61,50 @@ def markdown_to_pdf_bytes(title: str, markdown_text: str) -> bytes:
 
     out = pdf.output()
     return bytes(out)
+
+
+def _safe_filename(text: str, fallback: str) -> str:
+    slug = re.sub(r"[^a-zA-Z0-9\-]+", "-", (text or fallback).strip().lower()).strip("-")
+    return slug or fallback
+
+
+def build_batch_zip(items: list[dict]) -> bytes:
+    """Bundles a batch of generation results into one ZIP: one .docx per
+    successful article, plus a batch_summary.csv covering every item
+    (including failures, so the CSV is a complete audit trail of the run)."""
+    buf = io.BytesIO()
+    csv_buf = io.StringIO()
+    writer = csv.writer(csv_buf)
+    writer.writerow(["Topic", "Keyword", "Geo", "Status", "Provider", "Words", "Readability", "KeywordDensity%", "Error"])
+
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        used_names = set()
+        for item in items:
+            req = item["request"]
+            result = item["result"]
+            topic, keyword, geo = req.get("topic", ""), req.get("primary_keyword", ""), req.get("geo_target", "")
+
+            if "error" in result:
+                writer.writerow([topic, keyword, geo, "FAILED", "", "", "", "", result["error"]])
+                continue
+
+            article_md = result.get("optimized_article_markdown", "")
+            word_count = len(article_md.split())
+            readability = result.get("metrics", {}).get("readability", {}).get("fleschReadingEase", "")
+            density = result.get("metrics", {}).get("keywordDensity", {}).get("keywordDensityPercent", "")
+            writer.writerow([topic, keyword, geo, "OK", result.get("provider_used", ""), word_count, readability, density, ""])
+
+            base_name = _safe_filename(topic, f"article-{len(used_names) + 1}")
+            filename = f"{base_name}.docx"
+            n = 2
+            while filename in used_names:
+                filename = f"{base_name}-{n}.docx"
+                n += 1
+            used_names.add(filename)
+
+            docx_bytes = markdown_to_docx_bytes(topic, article_md)
+            zf.writestr(filename, docx_bytes)
+
+        zf.writestr("batch_summary.csv", csv_buf.getvalue())
+
+    return buf.getvalue()

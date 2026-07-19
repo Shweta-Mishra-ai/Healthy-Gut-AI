@@ -9,12 +9,9 @@
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.100%2B-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
 [![Groq](https://img.shields.io/badge/LLM-Groq%20%2F%20Llama%203.3-orange)](https://console.groq.com)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-55%20passing-brightgreen)](tests/)
-[![GitHub stars](https://img.shields.io/github/stars/Shweta-Mishra-ai/Healthy-Gut-AI?style=social)](https://github.com/Shweta-Mishra-ai/Healthy-Gut-AI)
+[![Tests](https://img.shields.io/badge/tests-53%20passing-brightgreen)](tests/)
 
-⭐️ **Show your support by starring the repo if you like it!** ⭐️
-
-[Quick Start](#-quick-start) · [Architecture](#-architecture) · [Codebase Map](#-codebase-map) · [API Reference](#-api-reference) · [Deployment](#-deployment) · [Contributing](CONTRIBUTING.md)
+[Quick Start](#-quick-start) · [Architecture](#-architecture) · [API Reference](#-api-reference) · [Deployment](#-deployment) · [Contributing](CONTRIBUTING.md)
 
 </div>
 
@@ -34,7 +31,7 @@ demo usually is:
 - **Fails safely, not silently.** Structured error codes, not generic 500s.
 - **Costs nothing to run at small scale.** Default provider is Groq's free
   tier; OpenAI is an optional, last-resort fallback you control.
-- **Tested, not just written.** 55 automated tests, CI on every push.
+- **Tested, not just written.** 57 automated tests, CI on every push.
 
 <p align="center">
   <img src="docs/pipeline-flow.gif" alt="Healthy Gut AI request pipeline animation" width="800">
@@ -47,18 +44,21 @@ demo usually is:
 | Category | Capability |
 |---|---|
 | **Generation** | Single-article and batch (multi-topic, bounded-concurrency) generation |
-| **Reliability** | Fallback chain (Groq, OpenRouter, OpenAI, and Mock) with backoff + timeout + retries |
-| **Validation** | Pydantic schemas + RAG-based out-of-scope domain filtering (rejects non-gut-health topics) |
+| **Topic scoping** | Rejects clearly out-of-scope topics (e.g. "infectious disease epidemiology") with a clear 422 instead of generating unfocused, off-topic content |
+| **Length compliance** | Prompts use per-section word budgets (not a single vague target) for more reliable pillar/supporting length adherence; actual word count is surfaced in every response |
+| **Quality scoring** | Every article gets a programmatic 0-100 score with specific flags (word count vs. target, keyword placement, meta description length, slug format, FAQ count, readability band, disclaimer presence) — not a self-reported LLM claim |
+| **Reliability** | Groq → OpenRouter → OpenAI → Mock fallback chain, each with retry + backoff + timeout |
+| **Validation** | Strict Pydantic schemas — length limits, empty/whitespace rejection, unsafe-character rejection |
 | **Rate limiting** | Per-IP sliding-window limiter, configurable via `RATE_LIMIT_PER_MINUTE` |
 | **Caching** | In-memory TTL cache — identical requests skip the LLM call entirely |
 | **Security** | DOMPurify-sanitized markdown rendering on the frontend (XSS-safe) |
 | **Localization** | English and Hindi article generation |
-| **RAG retrieval** | TF-IDF similarity search over a 24-topic curated gut-health knowledge base — `/rag/preview` exposes matches + scores |
-| **Export** | Download generated articles as `.docx` or `.pdf`, plus batch export as a packaged `.zip` with CSV summaries |
-| **Quality metrics** | Flesch Reading Ease + keyword density + programmatic content quality score (flags missing disclaimers, bad slug formatting, short text, etc.) |
+| **RAG retrieval** | TF-IDF similarity search over a 24-topic curated gut-health knowledge base — real relevance ranking, not keyword lookup; `/rag/preview` exposes matches + scores |
+| **Export** | Download generated articles as `.docx` or `.pdf` |
+| **Quality metrics** | Flesch Reading Ease + keyword density on every article |
 | **SEO metadata** | Meta description, URL slug, FAQs, `schema.org` JSON-LD, dual CTAs |
 | **Observability** | Structured request logging, `/health` reports live provider config + cache stats |
-| **Deployability** | Render (`render.yaml` / `Procfile`) and Vercel/AWS Lambda (`api/index.py` via Mangum) out of the box |
+| **Deployability** | Railway (`Procfile`) and Vercel/AWS Lambda (`api/index.py` via Mangum) out of the box |
 
 ---
 
@@ -235,6 +235,7 @@ Full reference in [`.env.example`](.env.example).
 | `GET` | `/rag/preview?topic=...&keyword=...` | Shows which knowledge-base chunks are retrieved for a query, with similarity scores |
 | `POST` | `/generate` | Generate one article |
 | `POST` | `/generate/batch` | Generate up to `MAX_BATCH_SIZE` articles concurrently |
+| `POST` | `/export/batch/zip` | Generate (or reuse cache for) a batch and return one ZIP: `.docx` per article + `batch_summary.csv` |
 | `POST` | `/export/docx` | Generate (or reuse cache) and return as `.docx` |
 | `POST` | `/export/pdf` | Generate (or reuse cache) and return as `.pdf` |
 
@@ -298,7 +299,7 @@ failure in one item never fails the whole batch.
 python -m pytest tests/ -v
 ```
 
-55 tests across eight suites:
+57 tests across eight suites:
 
 | Suite | Covers |
 |---|---|
@@ -306,47 +307,17 @@ python -m pytest tests/ -v
 | `tests/test_schemas.py` | Input validation (length limits, unsafe characters, batch size limits) |
 | `tests/test_rag.py` | Retrieval quality — relevant queries rank the correct topic first, different queries return different results, empty/nonsense queries fall back gracefully |
 | `tests/test_security.py` | Optional API-key auth (blocked/allowed), disclaimer safety-net (always present, appended if missing, not duplicated) |
+| `tests/test_scope_and_batch_export.py` | Topic-scope guard (in/out of domain), batch ZIP export contents (DOCX files + CSV, including failed-item rows) |
+| `tests/test_quality.py` | Programmatic quality scoring — word count, keyword placement, meta length, slug format, FAQ count, readability band, disclaimer presence |
+| `tests/test_load.py` | Concurrent requests don't crash the app, bounded batch concurrency completes reliably, rate limiter is a real recoverable sliding window |
 | `tests/test_api.py` | Full request lifecycle in mock mode — health, generation, caching, batching, rate limiting |
-| `tests/test_quality.py` | Programmatic content quality checks (word count limits, disclaimers, meta length, etc.) |
-| `tests/test_load.py` | Concurrent request handling under load, batch concurrency limits, rate limiter window recovery |
-| `tests/test_scope_and_batch_export.py` | Domain filtering logic (is_in_domain) and batch ZIP/CSV generation |
 
 CI (`.github/workflows/ci.yml`) runs the full suite on Python 3.11 and 3.12
 on every push and pull request.
 
 ---
 
-## 📦 Codebase Map
-
-### Architecture Flowchart
-```mermaid
-graph TD
-    %% Base Styling
-    classDef default fill:#f9f9f9,stroke:#e5e7eb,stroke-width:1px,color:#1f2937;
-    classDef app fill:#e0e7ff,stroke:#818cf8,stroke-width:2px,color:#1e1b4b;
-    classDef rag fill:#ecfdf5,stroke:#34d399,stroke-width:2px,color:#064e3b;
-    
-    %% Structure
-    Root[Healthy-Gut-AI] --> API[api/index.py <br><i>Mangum Lambda Handler</i>]
-    Root --> App[app/ <br><i>Core Application</i>]:::app
-    Root --> Static[static/ <br><i>Frontend Client</i>]
-    Root --> Tests[tests/ <br><i>Pytest Suite</i>]
-    
-    App --> Main[main.py <br><i>FastAPI App & Routing</i>]:::app
-    App --> Config[config.py <br><i>Environment Settings</i>]:::app
-    App --> Schemas[schemas.py <br><i>Pydantic Validators</i>]:::app
-    App --> Providers[llm_providers.py <br><i>LLM Fallback Pipeline</i>]:::app
-    App --> RAG[rag/ <br><i>Retrieval Augmented Gen</i>]:::rag
-    App --> Metrics[metrics.py <br><i>SEO & Readability Metrics</i>]:::app
-    App --> Cache[cache.py <br><i>TTL In-Memory Cache</i>]:::app
-    App --> RateLimit[rate_limit.py <br><i>Sliding-Window Limiter</i>]:::app
-    App --> Export[export.py <br><i>DOCX & PDF Generators</i>]:::app
-
-    RAG --> KB[knowledge_base.py <br><i>24 Curated Medical Chunks</i>]:::rag
-    RAG --> Retr[retriever.py <br><i>TF-IDF Similarity Search</i>]:::rag
-```
-
-### Directory Structure
+## 📦 Project Structure
 
 ```
 Healthy-Gut-AI/
@@ -431,6 +402,33 @@ for how to help close these.
 Contributions are welcome — see [`CONTRIBUTING.md`](CONTRIBUTING.md) for the
 local setup, coding standards, and PR checklist.
 
+---
+
+## 🗺 Roadmap Status
+
+Tracked against the 3-phase plan:
+
+**Phase 1 — Downloads (done)**
+- [x] Download All ZIP (`/export/batch/zip` — DOCX per article + CSV summary)
+- [x] Batch downloads
+- [x] Individual downloads (DOCX/PDF per article, single or batch)
+- [x] Copy button (single article) + Copy All (batch, markdown-joined)
+
+**Phase 2 — Content depth (partial)**
+- [x] FAQ generation (already in every response)
+- [x] Better SEO report — programmatic 0-100 quality score with specific flags (`app/quality.py`), not just raw metrics
+- [ ] References/citations block in the article itself (RAG sources are returned in `rag_sources` but not yet rendered as an in-article "Sources" section)
+- [ ] Outline preview before generation
+
+**Phase 3 — Polish (partial)**
+- [x] True 2500+ word pillar articles — per-section word budgets in prompts (`app/llm_providers.py`); mock mode stays short by design (fixed template), live provider calls follow the budget
+- [ ] Tone selector (educational / authoritative / patient-friendly / academic)
+- [ ] JSON/Markdown raw export (currently DOCX/PDF only)
+- [ ] Better readability metrics beyond Flesch (grade-level, sentence-length distribution)
+- [ ] Dashboard (batch history, quality trends over time)
+
+---
+
 ## 📄 License
 
 Released under the [MIT License](LICENSE).
@@ -442,6 +440,7 @@ Released under the [MIT License](LICENSE).
 **If Healthy Gut AI was useful to you, please consider giving it a ⭐ —**
 **it genuinely helps the project reach more people.**
 
-[![Star this repo](https://img.shields.io/github/stars/Shweta-Mishra-ai/Healthy-Gut-AI?style=social)](https://github.com/Shweta-Mishra-ai/Healthy-Gut-AI)
+[![Tests](https://img.shields.io/badge/tests-57%20passing-brightgreen)](tests/)
+[![GitHub stars](https://img.shields.io/github/stars/Shweta-Mishra-ai/Healthy-Gut-AI?style=social)](https://github.com/Shweta-Mishra-ai/Healthy-Gut-AI)
 
 </div>

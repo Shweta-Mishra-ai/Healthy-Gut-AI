@@ -12,7 +12,7 @@ from pydantic import ValidationError
 
 from app.cache import article_cache
 from app.config import settings
-from app.export import markdown_to_docx_bytes, markdown_to_pdf_bytes
+from app.export import markdown_to_docx_bytes, markdown_to_pdf_bytes, build_batch_zip
 from app.llm_providers import llm_generate
 from app.metrics import keyword_density, readability
 from app.quality import assess_quality
@@ -148,9 +148,17 @@ def root():
     return FileResponse(os.path.join(STATIC_DIR, "index.html"))
 
 
+OUT_OF_SCOPE_MESSAGE = (
+    "Healthy Gut AI specializes in gut/digestive health topics (IBS, IBD, GERD, "
+    "Celiac, SIBO, microbiome, diet, and related conditions). This topic looks "
+    "outside that scope, so we're not generating it rather than producing an "
+    "unfocused, low-trust article. Try a gut-health-related angle instead."
+)
+
+
 async def _generate_one(req: GenerateRequest) -> dict:
     if not is_in_domain(req.topic, req.primary_keyword):
-        return {"error": "Topic is out of scope for gut health", "out_of_scope": True, "topic": req.topic}
+        return {"error": OUT_OF_SCOPE_MESSAGE, "out_of_scope": True}
 
     cache_key = article_cache.make_key(req.topic, req.primary_keyword, req.geo_target, req.article_type.value, req.language.value)
     cached = article_cache.get(cache_key)
@@ -165,9 +173,9 @@ async def _generate_one(req: GenerateRequest) -> dict:
 
     article_md = result.get("optimized_article_markdown", "")
     result["metrics"] = {
+        "wordCount": len(article_md.split()),
         "readability": readability(article_md),
         "keywordDensity": keyword_density(article_md, req.primary_keyword),
-        "wordCount": len(article_md.split()),
     }
     result["quality"] = assess_quality(result, req.topic, req.primary_keyword, req.article_type.value)
     result["cached"] = False
@@ -211,12 +219,36 @@ async def generate_batch(payload: BatchGenerateRequest):
     })
 
 
+@app.post("/export/batch/zip")
+async def export_batch_zip(payload: BatchGenerateRequest):
+    """Regenerates (or reuses cache for) every item in the batch and returns
+    a ZIP: one .docx per successful article plus batch_summary.csv covering
+    every item, including failures."""
+    semaphore = asyncio.Semaphore(settings.BATCH_CONCURRENCY)
+
+    async def _bounded(req: GenerateRequest):
+        async with semaphore:
+            try:
+                result = await _generate_one(req)
+            except Exception as e:
+                logger.exception("batch zip item failed: %s", e)
+                result = {"error": str(e)}
+            return {"request": req.model_dump(mode="json"), "result": result}
+
+    items = await asyncio.gather(*(_bounded(item) for item in payload.items))
+    zip_bytes = build_batch_zip(items)
+    return Response(
+        content=zip_bytes,
+        media_type="application/zip",
+        headers={"Content-Disposition": 'attachment; filename="healthy-gut-ai-batch.zip"'},
+    )
+
+
 @app.post("/export/docx")
 async def export_docx(payload: GenerateRequest):
     result = await _generate_one(payload)
     if "error" in result:
-        status = 422 if result.get("out_of_scope") else 502
-        return JSONResponse(status_code=status, content=result)
+        return JSONResponse(status_code=502, content=result)
     data = markdown_to_docx_bytes(payload.topic, result.get("optimized_article_markdown", ""))
     filename = f"{payload.topic.lower().replace(' ', '-')}.docx"
     return Response(
@@ -230,63 +262,13 @@ async def export_docx(payload: GenerateRequest):
 async def export_pdf(payload: GenerateRequest):
     result = await _generate_one(payload)
     if "error" in result:
-        status = 422 if result.get("out_of_scope") else 502
-        return JSONResponse(status_code=status, content=result)
+        return JSONResponse(status_code=502, content=result)
     data = markdown_to_pdf_bytes(payload.topic, result.get("optimized_article_markdown", ""))
     filename = f"{payload.topic.lower().replace(' ', '-')}.pdf"
     return Response(
         content=data,
         media_type="application/pdf",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
-    )
-
-
-@app.post("/export/batch/zip")
-async def export_batch_zip(payload: BatchGenerateRequest):
-    import zipfile
-    import io
-    import csv
-
-    semaphore = asyncio.Semaphore(settings.BATCH_CONCURRENCY)
-
-    async def _bounded(req: GenerateRequest):
-        async with semaphore:
-            try:
-                return await _generate_one(req)
-            except Exception as e:
-                logger.exception("batch export item failed: %s", e)
-                return {"error": str(e), "topic": req.topic}
-
-    results = await asyncio.gather(*(_bounded(item) for item in payload.items))
-
-    zip_buffer = io.BytesIO()
-    with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
-        # Create CSV summary
-        csv_buffer = io.StringIO()
-        csv_writer = csv.writer(csv_buffer)
-        csv_writer.writerow(["Topic", "Status", "Word Count", "Error"])
-
-        for req, res in zip(payload.items, results):
-            topic = req.topic
-            if "error" in res:
-                csv_writer.writerow([topic, "FAILED", 0, res.get("error", "Unknown error")])
-            else:
-                # Add docx to zip
-                article_md = res.get("optimized_article_markdown", "")
-                docx_data = markdown_to_docx_bytes(topic, article_md)
-                slug = topic.lower().replace(" ", "-")
-                zf.writestr(f"{slug}.docx", docx_data)
-                
-                word_count = len(article_md.split())
-                csv_writer.writerow([topic, "OK", word_count, ""])
-
-        # Add CSV to zip
-        zf.writestr("batch_summary.csv", csv_buffer.getvalue())
-
-    return Response(
-        content=zip_buffer.getvalue(),
-        media_type="application/zip",
-        headers={"Content-Disposition": "attachment; filename=\"batch_export.zip\""}
     )
 
 

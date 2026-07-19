@@ -77,8 +77,28 @@ If symptoms persist for more than 3 weeks, consult a gastroenterologist in **{ge
 
 def _build_prompts(topic, keyword, geo, article_type, language):
     ctx = rag_context(topic, keyword)
-    word_count = "2500-3000" if article_type == "pillar" else "1000-1500"
     lang_instr = "Write the article in Hindi (Devanagari script)." if language == "hi" else "Write the article in English."
+
+    if article_type == "pillar":
+        word_count = "2500-3000"
+        section_budget = (
+            "- Overview: ~350-450 words\n"
+            "- Causes/Triggers: ~400-500 words\n"
+            "- Symptoms: ~400-500 words\n"
+            "- Diet & Management: ~600-700 words (include the comparison table here)\n"
+            "- When to See a Doctor: ~250-350 words\n"
+            "- FAQs/closing: ~200-300 words"
+        )
+    else:
+        word_count = "1000-1500"
+        section_budget = (
+            "- Overview: ~150-200 words\n"
+            "- Causes/Triggers: ~200-250 words\n"
+            "- Symptoms: ~200-250 words\n"
+            "- Diet & Management: ~300-400 words (include the comparison table here)\n"
+            "- When to See a Doctor: ~150-200 words"
+        )
+
     prompt1 = f"""You are a senior medical content writer for Healthy Gut AI, writing for an educated general
 audience, not clinicians. Write a medically accurate, SEO-optimized {article_type} article about: {topic}
 Primary keyword: {keyword}
@@ -93,15 +113,23 @@ STRICT RULES:
 - Do NOT claim any food, supplement, or remedy "cures" or "eliminates" a condition. Use careful language:
   "may help manage", "is commonly recommended", "some people find relief with".
 - Always include a clear medical disclaimer recommending professional consultation.
-- Structure with H2 sections: Overview, Causes/Triggers, Symptoms, Diet & Management, When to See a Doctor.
+- Stay strictly on the stated topic — do not drift into unrelated conditions not implied by the topic
+  or keyword, even if they appear in the VERIFIED MEDICAL CONTEXT.
 
-Word count: {word_count} words. {lang_instr}
-Include: H1 with keyword, a comparison table (foods to eat vs. avoid, or similar), diet section, medical disclaimer.
+REQUIRED LENGTH: {word_count} words TOTAL. This is a hard requirement, not a suggestion — write each
+section to roughly its target length below, in full paragraphs (not brief summaries), so the total lands
+in range:
+{section_budget}
+
+Structure with H2 sections matching the budget above. {lang_instr}
+Include: H1 with keyword, a comparison table (foods to eat vs. avoid, or similar) in the Diet & Management
+section, and the medical disclaimer at the end.
 Output: Markdown only, no commentary before or after."""
 
     prompt2 = f"""Optimize the following article for SEO and geo-target "{geo}".
 Keyword: {keyword}
-Preserve all factual content from the article body — do not add new statistics or claims while optimizing.
+Preserve all factual content AND the full length of the article body — do not shorten, summarize, or drop
+sections while optimizing; only add SEO metadata around it.
 Return ONLY a valid JSON object (no markdown fences, no commentary) with exactly these keys:
 optimized_article_markdown (string), meta_description (string), url_slug (string),
 faqs (array of {{question, answer}}), schema_json_ld (object), cta_soft (string), cta_direct (string).

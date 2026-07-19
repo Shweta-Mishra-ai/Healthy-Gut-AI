@@ -29,6 +29,18 @@ class Retriever:
         self._vectorizer = TfidfVectorizer(stop_words="english", ngram_range=(1, 2))
         self._matrix = self._vectorizer.fit_transform(texts)
 
+    def max_relevance(self, query: str) -> float:
+        """Raw top similarity score, with no fallback substitution — used to
+        detect when a topic is genuinely outside this tool's specialization
+        (gut/digestive health), rather than just retrieving 'something'."""
+        query = (query or "").strip()
+        if not query:
+            return 0.0
+        with self._lock:
+            query_vec = self._vectorizer.transform([query])
+            scores = cosine_similarity(query_vec, self._matrix)[0]
+        return float(max(scores)) if len(scores) else 0.0
+
     def retrieve(self, query: str, top_k: int = 3, min_score: float = 0.03) -> list[dict]:
         """Return up to top_k corpus chunks most relevant to `query`,
         each with a similarity score. Falls back to the general gut-health
@@ -74,27 +86,30 @@ def build_rag_context(topic: str, keyword: str, top_k: int = 3) -> tuple[str, li
     return context_text, chunks
 
 
-DOMAINS = {
-    "gut", "microbiome", "ibs", "ibd", "gerd", "celiac", "crohn", "colitis", 
-    "bowel", "reflux", "heartburn", "bloating", "sibo", "fodmap", "gastritis", 
-    "diverticulitis", "gastroparesis", "constipation", "diarrhea", "pylori", 
-    "leaky", "prebiotic", "probiotic", "fermented", "microflora", "digest", 
-    "stomach", "colon", "ulcerative", "acid", "heartburn", "esophagus",
-    "ileum", "celiac", "gluten", "lactase", "lactose", "fistula", "stricture",
-    "microbe", "bacteria", "fiber", "metabolism", "short-chain"
-}
+DOMAIN_MIN_SCORE = 0.30
+
+_GUT_HEALTH_TERMS = (
+    "gut", "digest", "bowel", "stomach", "intestin", "ibs", "ibd", "celiac", "coeliac",
+    "gerd", "reflux", "heartburn", "sibo", "microbiome", "probiotic", "prebiotic",
+    "fodmap", "fiber", "fibre", "diarrhea", "diarrhoea", "constipation", "bloat",
+    "gastritis", "diverticul", "crohn", "colitis", "lactose", "gluten", "fermented",
+    "gastro", "colon", "rectal", "flatulence", "abdominal", "nausea", "ulcer",
+)
 
 
-def is_in_domain(topic: str, keyword: str = "") -> bool:
-    import re
-    text = f"{topic} {keyword}".lower()
-    words = re.findall(r"\b\w+\b", text)
-    for word in words:
-        if word in DOMAINS:
-            return True
-        for d in DOMAINS:
-            if len(d) > 3 and word.startswith(d):
-                return True
-    return False
+def is_in_domain(topic: str, keyword: str) -> bool:
+    """True if the topic/keyword is plausibly gut/digestive-health related.
+    This tool is intentionally scoped to gut health — generating on wildly
+    unrelated topics (e.g. 'infectious disease epidemiology') produces
+    off-topic, low-trust content rather than a genuinely useful article.
 
-
+    Uses a hybrid check: an explicit gut-health term allowlist (reliable for
+    the common case) plus a high TF-IDF similarity bar as a fallback for
+    phrasing the term list doesn't cover. TF-IDF alone on this small a
+    corpus over-matches on generic medical words ("disease", "chronic")
+    shared across every chunk, so it can't be the only signal.
+    """
+    combined = f"{topic} {keyword}".lower()
+    if any(term in combined for term in _GUT_HEALTH_TERMS):
+        return True
+    return retriever.max_relevance(combined) >= DOMAIN_MIN_SCORE

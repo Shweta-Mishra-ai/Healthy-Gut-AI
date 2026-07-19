@@ -38,7 +38,7 @@ key required.
 python -m pytest tests/ -v
 ```
 
-All 29 existing tests must pass before you open a PR. Add new tests under
+All 57 existing tests must pass before you open a PR. Add new tests under
 `tests/` mirroring the module you changed:
 
 | You changed... | Add/update tests in... |
