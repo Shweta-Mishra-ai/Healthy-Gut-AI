@@ -72,3 +72,29 @@ def build_rag_context(topic: str, keyword: str, top_k: int = 3) -> tuple[str, li
     chunks = retriever.retrieve(query, top_k=top_k)
     context_text = " ".join(f"[{c['title']}] {c['content']}" for c in chunks)
     return context_text, chunks
+
+
+DOMAINS = {
+    "gut", "microbiome", "ibs", "ibd", "gerd", "celiac", "crohn", "colitis", 
+    "bowel", "reflux", "heartburn", "bloating", "sibo", "fodmap", "gastritis", 
+    "diverticulitis", "gastroparesis", "constipation", "diarrhea", "pylori", 
+    "leaky", "prebiotic", "probiotic", "fermented", "microflora", "digest", 
+    "stomach", "colon", "ulcerative", "acid", "heartburn", "esophagus",
+    "ileum", "celiac", "gluten", "lactase", "lactose", "fistula", "stricture",
+    "microbe", "bacteria", "fiber", "metabolism", "short-chain"
+}
+
+
+def is_in_domain(topic: str, keyword: str = "") -> bool:
+    import re
+    text = f"{topic} {keyword}".lower()
+    words = re.findall(r"\b\w+\b", text)
+    for word in words:
+        if word in DOMAINS:
+            return True
+        for d in DOMAINS:
+            if len(d) > 3 and word.startswith(d):
+                return True
+    return False
+
+
