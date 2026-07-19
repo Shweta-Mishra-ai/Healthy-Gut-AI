@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: healthy-gut-ai
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: LOG_LEVEL
+        value: INFO
+      - key: RATE_LIMIT_PER_MINUTE
+        value: "10"
+      - key: CACHE_TTL_SECONDS
+        value: "3600"
+      - key: BATCH_CONCURRENCY
+        value: "3"

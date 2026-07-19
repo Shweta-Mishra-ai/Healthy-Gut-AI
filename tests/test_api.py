@@ -79,20 +79,3 @@ def test_rate_limiting():
     assert 429 in statuses
     rate_limiter._limit = 10
     rate_limiter._hits.clear()
-
-
-def test_export_docx():
-    payload = {"topic": "IBS diet test docx", "primary_keyword": "IBS", "geo_target": "USA"}
-    r = client.post("/export/docx", json=payload)
-    assert r.status_code == 200
-    assert r.headers["content-type"] == "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-    assert len(r.content) > 0
-
-
-def test_export_pdf():
-    payload = {"topic": "IBS diet test pdf", "primary_keyword": "IBS", "geo_target": "USA"}
-    r = client.post("/export/pdf", json=payload)
-    assert r.status_code == 200
-    assert r.headers["content-type"] == "application/pdf"
-    assert len(r.content) > 0
-

@@ -154,7 +154,18 @@ input:focus, select:focus {
     display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;
 }
 .metrics-grid {
-    display: grid; grid-template-columns: repeat(2, 1fr); gap: 1rem; margin-bottom: 2rem;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1rem;
+    margin-bottom: 2rem;
+}
+@media (max-width: 640px) {
+    .metrics-grid {
+        grid-template-columns: 1fr;
+    }
+    .metrics-grid > .metric-card {
+        grid-column: span 1 !important;
+    }
 }
 .metric-card {
     background: white; padding: 1.5rem; border-radius: 1rem; text-align: center;
@@ -186,7 +197,7 @@ input:focus, select:focus {
 .mode-btn.active { background: rgba(80,160,255,0.25); border-color: rgba(80,160,255,0.5); }
 #form-error {
     margin-top: 0.75rem; padding: 0.75rem 1rem; border-radius: 8px;
-    background: rgba(230,80,80,0.15); border: 1px solid rgba(230,80,80,0.4); color: #b91c1c;
+    background: rgba(230,80,80,0.15); border: 1px solid rgba(230,80,80,0.4); color: #ffb3b3;
 }
 details.glass summary { cursor: pointer; font-size: 1.05rem; }
 textarea#batch_topics {
