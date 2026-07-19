@@ -9,7 +9,7 @@
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.100%2B-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
 [![Groq](https://img.shields.io/badge/LLM-Groq%20%2F%20Llama%203.3-orange)](https://console.groq.com)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-37%20passing-brightgreen)](tests/)
+[![Tests](https://img.shields.io/badge/tests-55%20passing-brightgreen)](tests/)
 [![GitHub stars](https://img.shields.io/github/stars/Shweta-Mishra-ai/Healthy-Gut-AI?style=social)](https://github.com/Shweta-Mishra-ai/Healthy-Gut-AI)
 
 ⭐️ **Show your support by starring the repo if you like it!** ⭐️
@@ -34,7 +34,7 @@ demo usually is:
 - **Fails safely, not silently.** Structured error codes, not generic 500s.
 - **Costs nothing to run at small scale.** Default provider is Groq's free
   tier; OpenAI is an optional, last-resort fallback you control.
-- **Tested, not just written.** 35 automated tests, CI on every push.
+- **Tested, not just written.** 55 automated tests, CI on every push.
 
 <p align="center">
   <img src="docs/pipeline-flow.gif" alt="Healthy Gut AI request pipeline animation" width="800">
@@ -47,18 +47,18 @@ demo usually is:
 | Category | Capability |
 |---|---|
 | **Generation** | Single-article and batch (multi-topic, bounded-concurrency) generation |
-| **Reliability** | Groq → OpenRouter → OpenAI → Mock fallback chain, each with retry + backoff + timeout |
-| **Validation** | Strict Pydantic schemas — length limits, empty/whitespace rejection, unsafe-character rejection |
+| **Reliability** | Fallback chain (Groq, OpenRouter, OpenAI, and Mock) with backoff + timeout + retries |
+| **Validation** | Pydantic schemas + RAG-based out-of-scope domain filtering (rejects non-gut-health topics) |
 | **Rate limiting** | Per-IP sliding-window limiter, configurable via `RATE_LIMIT_PER_MINUTE` |
 | **Caching** | In-memory TTL cache — identical requests skip the LLM call entirely |
 | **Security** | DOMPurify-sanitized markdown rendering on the frontend (XSS-safe) |
 | **Localization** | English and Hindi article generation |
-| **RAG retrieval** | TF-IDF similarity search over a 24-topic curated gut-health knowledge base — real relevance ranking, not keyword lookup; `/rag/preview` exposes matches + scores |
-| **Export** | Download generated articles as `.docx` or `.pdf` |
-| **Quality metrics** | Flesch Reading Ease + keyword density on every article |
+| **RAG retrieval** | TF-IDF similarity search over a 24-topic curated gut-health knowledge base — `/rag/preview` exposes matches + scores |
+| **Export** | Download generated articles as `.docx` or `.pdf`, plus batch export as a packaged `.zip` with CSV summaries |
+| **Quality metrics** | Flesch Reading Ease + keyword density + programmatic content quality score (flags missing disclaimers, bad slug formatting, short text, etc.) |
 | **SEO metadata** | Meta description, URL slug, FAQs, `schema.org` JSON-LD, dual CTAs |
 | **Observability** | Structured request logging, `/health` reports live provider config + cache stats |
-| **Deployability** | Railway (`Procfile`) and Vercel/AWS Lambda (`api/index.py` via Mangum) out of the box |
+| **Deployability** | Render (`render.yaml` / `Procfile`) and Vercel/AWS Lambda (`api/index.py` via Mangum) out of the box |
 
 ---
 
@@ -298,7 +298,7 @@ failure in one item never fails the whole batch.
 python -m pytest tests/ -v
 ```
 
-35 tests across five suites:
+55 tests across eight suites:
 
 | Suite | Covers |
 |---|---|
@@ -307,6 +307,9 @@ python -m pytest tests/ -v
 | `tests/test_rag.py` | Retrieval quality — relevant queries rank the correct topic first, different queries return different results, empty/nonsense queries fall back gracefully |
 | `tests/test_security.py` | Optional API-key auth (blocked/allowed), disclaimer safety-net (always present, appended if missing, not duplicated) |
 | `tests/test_api.py` | Full request lifecycle in mock mode — health, generation, caching, batching, rate limiting |
+| `tests/test_quality.py` | Programmatic content quality checks (word count limits, disclaimers, meta length, etc.) |
+| `tests/test_load.py` | Concurrent request handling under load, batch concurrency limits, rate limiter window recovery |
+| `tests/test_scope_and_batch_export.py` | Domain filtering logic (is_in_domain) and batch ZIP/CSV generation |
 
 CI (`.github/workflows/ci.yml`) runs the full suite on Python 3.11 and 3.12
 on every push and pull request.
