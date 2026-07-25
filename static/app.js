@@ -82,8 +82,8 @@ document.getElementById('generate-form').addEventListener('submit', async (e) =>
             }
         }
     } catch (err) {
-        console.error(err);
-        showError('Failed to connect to backend. Check your connection and try again.');
+        console.error('Submit handler error:', err);
+        showError(err.message || 'Failed to connect to backend. Check your connection and try again.');
     } finally {
         btn.disabled = false;
         loading.classList.add('hidden');
@@ -108,8 +108,28 @@ function formatError(status, data) {
 }
 
 function safeHTML(markdown) {
-    const raw = marked.parse(markdown || 'No article content generated.');
-    return window.DOMPurify ? DOMPurify.sanitize(raw) : raw;
+    if (!markdown) return '<p>No article content generated.</p>';
+    try {
+        if (window.marked && typeof window.marked.parse === 'function') {
+            const raw = window.marked.parse(markdown);
+            return window.DOMPurify ? window.DOMPurify.sanitize(raw) : raw;
+        }
+    } catch (e) {
+        console.warn('marked.js parsing failed, using fallback:', e);
+    }
+    const escaped = (markdown || '')
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;");
+    const formatted = escaped
+        .replace(/^# (.*$)/gim, '<h1>$1</h1>')
+        .replace(/^## (.*$)/gim, '<h2>$1</h2>')
+        .replace(/^### (.*$)/gim, '<h3>$1</h3>')
+        .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+        .replace(/\*(.*?)\*/g, '<em>$1</em>')
+        .replace(/\n\n/g, '</p><p>')
+        .replace(/\n/g, '<br>');
+    return `<p>${formatted}</p>`;
 }
 
 function metricsBlock(data) {
