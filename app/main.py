@@ -38,7 +38,7 @@ app = FastAPI(title="Healthy Gut AI", version="2.0.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=os.getenv("CORS_ORIGINS", "*").split(","),
-    allow_methods=["GET", "POST"],
+    allow_methods=["*"],
     allow_headers=["*"],
 )
 
@@ -286,17 +286,17 @@ def wordpress_publish(article_id: str, status: str = "draft", dry_run: bool = Fa
     return result
 
 
-@app.get("/review", response_class=HTMLResponse)
+@app.api_route("/review", methods=["GET", "HEAD"], response_class=HTMLResponse)
 def review_page():
     return FileResponse(os.path.join(STATIC_DIR, "review.html"))
 
 
-@app.get("/dashboard", response_class=HTMLResponse)
+@app.api_route("/dashboard", methods=["GET", "HEAD"], response_class=HTMLResponse)
 def dashboard_page():
     return FileResponse(os.path.join(STATIC_DIR, "dashboard.html"))
 
 
-@app.get("/", response_class=HTMLResponse)
+@app.api_route("/", methods=["GET", "HEAD"], response_class=HTMLResponse)
 def root():
     return FileResponse(os.path.join(STATIC_DIR, "index.html"))
 
