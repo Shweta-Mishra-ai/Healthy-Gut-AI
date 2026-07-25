@@ -70,16 +70,40 @@ document.getElementById('generate-form').addEventListener('submit', async (e) =>
                 return;
             }
             state.lastRequests = rawItems;
-            const res = await fetch('/generate/batch', {
-                method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ items: rawItems })
-            });
-            const data = await res.json();
-            if (!res.ok) {
-                showError(formatError(res.status, data));
-            } else {
-                renderBatchResults(data);
+
+            const loadingText = loading.querySelector('p');
+            const total = rawItems.length;
+            const results = [];
+
+            for (let i = 0; i < total; i++) {
+                const item = rawItems[i];
+                if (loadingText) {
+                    loadingText.textContent = `Generating article ${i + 1} of ${total}: "${item.topic || 'Item ' + (i + 1)}"...`;
+                }
+                try {
+                    const res = await fetch('/generate', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(item)
+                    });
+                    const data = await res.json();
+                    if (!res.ok) {
+                        results.push({ error: data.error || `HTTP ${res.status}`, topic: item.topic, out_of_scope: data.out_of_scope });
+                    } else {
+                        results.push(data);
+                    }
+                } catch (itemErr) {
+                    results.push({ error: itemErr.message || 'Request failed', topic: item.topic });
+                }
             }
+
+            const okCount = results.filter(r => !r.error).length;
+            renderBatchResults({
+                results: results,
+                total: total,
+                succeeded: okCount,
+                failed: total - okCount
+            });
         }
     } catch (err) {
         console.error('Submit handler error:', err);
