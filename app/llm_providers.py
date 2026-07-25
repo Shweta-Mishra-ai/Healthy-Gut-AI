@@ -63,6 +63,11 @@ If symptoms persist for more than 3 weeks, consult a gastroenterologist in **{ge
     return {
         "optimized_article_markdown": article,
         "meta_description": f"Learn about {keyword} with our expert guide targeting {geo}. Find symptoms, diet tips, and when to seek help.",
+        "meta_description_variants": [
+            f"Learn about {keyword} with our expert guide targeting {geo}. Find symptoms, diet tips, and when to seek help.",
+            f"Struggling with {keyword}? Discover causes, symptoms, and management options tailored for {geo}.",
+            f"{topic.title()} explained: what {geo} readers need to know about symptoms, diet, and care.",
+        ],
         "url_slug": topic.lower().replace(" ", "-") + "-guide",
         "faqs": [
             {"question": f"What is {topic}?", "answer": ctx},
@@ -75,9 +80,19 @@ If symptoms persist for more than 3 weeks, consult a gastroenterologist in **{ge
     }
 
 
-def _build_prompts(topic, keyword, geo, article_type, language):
+TONE_INSTRUCTIONS = {
+    "educational": "Write in a clear, educational tone for a general audience — approachable but informative, like a trusted health website.",
+    "authoritative": "Write in an authoritative, confident clinical tone — precise terminology, minimal hedging, suited to an expert-reviewed health resource.",
+    "patient_friendly": "Write in a warm, reassuring, patient-friendly tone — simple words, short sentences, empathetic framing, suited for someone worried about symptoms.",
+    "academic": "Write in a formal, academic tone — precise terminology, measured claims, suited for a research-adjacent or clinician-facing audience.",
+    "seo_blog": "Write in an engaging, conversational SEO-blog tone — short paragraphs, active voice, hooks the reader, still medically accurate.",
+}
+
+
+def _build_prompts(topic, keyword, geo, article_type, language, tone="educational"):
     ctx = rag_context(topic, keyword)
     lang_instr = "Write the article in Hindi (Devanagari script)." if language == "hi" else "Write the article in English."
+    tone_instr = TONE_INSTRUCTIONS.get(tone, TONE_INSTRUCTIONS["educational"])
 
     if article_type == "pillar":
         word_count = "2500-3000"
@@ -115,6 +130,7 @@ STRICT RULES:
 - Always include a clear medical disclaimer recommending professional consultation.
 - Stay strictly on the stated topic — do not drift into unrelated conditions not implied by the topic
   or keyword, even if they appear in the VERIFIED MEDICAL CONTEXT.
+- TONE: {tone_instr}
 
 REQUIRED LENGTH: {word_count} words TOTAL. This is a hard requirement, not a suggestion — write each
 section to roughly its target length below, in full paragraphs (not brief summaries), so the total lands
@@ -130,8 +146,16 @@ Output: Markdown only, no commentary before or after."""
 Keyword: {keyword}
 Preserve all factual content AND the full length of the article body — do not shorten, summarize, or drop
 sections while optimizing; only add SEO metadata around it.
+
+For meta_description_variants, write exactly 3 alternative meta descriptions, each 120-160 characters,
+each including the keyword, but with genuinely different angles:
+1. Benefit-led (what the reader gains)
+2. Question-led (opens with the reader's likely question)
+3. Direct/keyword-led (states the topic plainly, keyword near the start)
+
 Return ONLY a valid JSON object (no markdown fences, no commentary) with exactly these keys:
-optimized_article_markdown (string), meta_description (string), url_slug (string),
+optimized_article_markdown (string), meta_description (string, same as variant 1),
+meta_description_variants (array of exactly 3 strings as described above), url_slug (string),
 faqs (array of {{question, answer}}), schema_json_ld (object), cta_soft (string), cta_direct (string).
 
 Article:
@@ -140,6 +164,46 @@ Article:
 
 
 _DISCLAIMER_MARKERS = ("disclaimer", "not a substitute for professional", "consult a", "consult your doctor")
+
+
+def _ensure_meta_variants(result: dict) -> dict:
+    """Programmatic safety net: free-tier models don't always follow complex
+    JSON schema instructions reliably. Guarantees meta_description_variants
+    is always a list of 2-3 non-empty strings, falling back to the primary
+    meta_description (and light variations of it) if the provider didn't
+    return usable variants."""
+    primary = (result.get("meta_description") or "").strip()
+    variants = result.get("meta_description_variants")
+
+    if isinstance(variants, list):
+        cleaned = [v.strip() for v in variants if isinstance(v, str) and v.strip()]
+    else:
+        cleaned = []
+
+    if len(cleaned) >= 2:
+        result["meta_description_variants"] = cleaned[:3]
+        return result
+
+    # Fallback: not enough usable variants from the model — build minimal ones from what we have.
+    fallback = [primary] if primary else []
+    if primary and not primary.lower().startswith("learn"):
+        fallback.append(f"Learn more: {primary}")
+    result["meta_description_variants"] = fallback[:3] if fallback else [primary or ""]
+    return result
+
+
+def _append_references(article_markdown: str, matched_chunks: list) -> str:
+    """Appends a real 'Sources Referenced' section listing the actual
+    knowledge-base chunks used to ground this article — verifiable, not
+    fabricated citations. Skips if already present (idempotent)."""
+    if "## sources referenced" in article_markdown.lower() or "## references" in article_markdown.lower():
+        return article_markdown
+    if not matched_chunks:
+        return article_markdown
+    lines = ["\n\n## Sources Referenced", ""]
+    for c in matched_chunks:
+        lines.append(f"- {c['title']} — internal medical knowledge base (topic: {c['topic']})")
+    return article_markdown.rstrip() + "\n" + "\n".join(lines)
 
 
 def _ensure_disclaimer(article_markdown: str) -> str:
@@ -168,8 +232,8 @@ async def _call_openai_compatible(base_url, api_key, model, prompt, json_mode=Fa
     return resp.choices[0].message.content
 
 
-async def _run_pipeline(base_url, api_key, model, provider_name, topic, keyword, geo, article_type, language):
-    prompt1, prompt2_template = _build_prompts(topic, keyword, geo, article_type, language)
+async def _run_pipeline(base_url, api_key, model, provider_name, topic, keyword, geo, article_type, language, tone="educational"):
+    prompt1, prompt2_template = _build_prompts(topic, keyword, geo, article_type, language, tone)
 
     last_err = None
     for attempt in range(settings.LLM_MAX_RETRIES + 1):
@@ -195,7 +259,7 @@ async def _run_pipeline(base_url, api_key, model, provider_name, topic, keyword,
     raise RuntimeError(last_err or f"{provider_name} failed with no error captured")
 
 
-async def llm_generate(topic: str, keyword: str, geo: str, article_type: str, language: str = "en") -> dict:
+async def llm_generate(topic: str, keyword: str, geo: str, article_type: str, language: str = "en", tone: str = "educational") -> dict:
     """Tries providers in order: Groq (free) -> OpenRouter (free) -> OpenAI (paid, optional)
     -> Mock template. Each failure is logged and the next provider is tried,
     so a single provider outage never takes the whole app down."""
@@ -212,7 +276,7 @@ async def llm_generate(topic: str, keyword: str, geo: str, article_type: str, la
     for name, base_url, api_key, model in providers:
         try:
             result = await asyncio.wait_for(
-                _run_pipeline(base_url, api_key, model, name, topic, keyword, geo, article_type, language),
+                _run_pipeline(base_url, api_key, model, name, topic, keyword, geo, article_type, language, tone),
                 timeout=settings.LLM_TIMEOUT_SECONDS * (settings.LLM_MAX_RETRIES + 1) + 5,
             )
             break
@@ -235,4 +299,6 @@ async def llm_generate(topic: str, keyword: str, geo: str, article_type: str, la
     ]
     if "optimized_article_markdown" in result:
         result["optimized_article_markdown"] = _ensure_disclaimer(result["optimized_article_markdown"])
+        result["optimized_article_markdown"] = _append_references(result["optimized_article_markdown"], matched_chunks)
+    result = _ensure_meta_variants(result)
     return result

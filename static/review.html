@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Healthy Gut AI | Review Queue</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.6/dist/purify.min.js"></script>
+    <style>
+        .tabs { display: flex; gap: 0.5rem; margin-bottom: 1rem; }
+        .tab-btn { padding: 0.5rem 1rem; border-radius: 8px; border: 1px solid rgba(255,255,255,0.15); background: rgba(255,255,255,0.05); color: inherit; cursor: pointer; }
+        .tab-btn.active { background: rgba(80,160,255,0.25); border-color: rgba(80,160,255,0.5); }
+        .review-card { background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.12); border-radius: 12px; padding: 1rem; margin-bottom: 1rem; }
+        .review-meta { display: flex; gap: 1rem; flex-wrap: wrap; font-size: 0.85rem; opacity: 0.75; margin: 0.5rem 0; }
+        .review-actions { display: flex; gap: 0.5rem; margin-top: 0.75rem; }
+        .btn-approve { background: rgba(80,220,150,0.25); border: 1px solid rgba(80,220,150,0.5); color: #7ee6b0; }
+        .btn-reject { background: rgba(230,80,80,0.2); border: 1px solid rgba(230,80,80,0.4); color: #ff9d9d; }
+        .btn-small { width: auto; padding: 0.4rem 0.9rem; margin-top: 0; border-radius: 8px; cursor: pointer; font-size: 0.85rem; }
+        .status-pill { padding: 0.15rem 0.5rem; border-radius: 999px; font-size: 0.75rem; }
+    </style>
+</head>
+<body>
+    <div class="background-globes">
+        <div class="globe globe-1"></div>
+        <div class="globe globe-2"></div>
+    </div>
+    <main class="container">
+        <header>
+            <h1>Review Queue</h1>
+            <p>No article should go live without a human confirming the medical framing is sound.</p>
+        </header>
+
+        <section class="generator-panel glass">
+            <div id="counts-summary" style="margin-bottom:1rem; opacity:0.8;"></div>
+            <div class="tabs">
+                <button class="tab-btn active" data-status="draft">Pending Review</button>
+                <button class="tab-btn" data-status="approved">Approved</button>
+                <button class="tab-btn" data-status="rejected">Rejected</button>
+            </div>
+            <div id="queue-list"></div>
+        </section>
+    </main>
+
+    <script>
+        let currentStatus = 'draft';
+
+        function safeHTML(markdown) {
+            const raw = marked.parse(markdown || '');
+            return window.DOMPurify ? DOMPurify.sanitize(raw) : raw;
+        }
+
+        async function loadCounts() {
+            const res = await fetch('/review/counts');
+            const c = await res.json();
+            document.getElementById('counts-summary').textContent =
+                `Total: ${c.total} · Pending: ${c.draft} · Approved: ${c.approved} · Rejected: ${c.rejected}`;
+        }
+
+        async function loadQueue(status) {
+            currentStatus = status;
+            document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.status === status));
+            const listEl = document.getElementById('queue-list');
+            listEl.innerHTML = '<p style="opacity:.6;">Loading...</p>';
+
+            const res = await fetch(`/review/queue?status=${status}`);
+            const data = await res.json();
+
+            if (!data.items.length) {
+                listEl.innerHTML = `<p style="opacity:.6;">No ${status} articles.</p>`;
+                return;
+            }
+
+            listEl.innerHTML = data.items.map(item => `
+                <div class="review-card">
+                    <strong>${item.topic}</strong>
+                    <div class="review-meta">
+                        <span>Keyword: ${item.primary_keyword}</span>
+                        <span>Provider: ${item.provider_used || '—'}</span>
+                        <span>Quality: ${item.quality_score ?? '—'}</span>
+                        <span>Words: ${item.word_count ?? '—'}</span>
+                        <span class="status-pill">${item.status}</span>
+                    </div>
+                    ${item.reviewer_note ? `<p style="opacity:.7;font-size:0.85rem;">Note: ${item.reviewer_note}</p>` : ''}
+                    <div class="review-actions">
+                        <button class="btn-small" onclick="viewArticle('${item.id}')">View Full Article</button>
+                        ${status === 'draft' ? `
+                            <button class="btn-small btn-approve" onclick="reviewAction('${item.id}', 'approve')">✅ Approve</button>
+                            <button class="btn-small btn-reject" onclick="reviewAction('${item.id}', 'reject')">❌ Reject</button>
+                        ` : ''}
+                        ${status === 'approved' ? `
+                            <button class="btn-small" onclick="publishToWordPress('${item.id}', true)">👁 Preview WP Publish (dry-run)</button>
+                            <button class="btn-small btn-approve" onclick="publishToWordPress('${item.id}', false)">📤 Publish to WordPress</button>
+                        ` : ''}
+                    </div>
+                    <div id="wp-result-${item.id}" class="hidden" style="margin-top:0.5rem; font-size:0.85rem;"></div>
+                    <div id="article-body-${item.id}" class="hidden article-content" style="margin-top:0.75rem;"></div>
+                </div>
+            `).join('');
+        }
+
+        async function viewArticle(id) {
+            const el = document.getElementById(`article-body-${id}`);
+            if (!el.classList.contains('hidden')) { el.classList.add('hidden'); return; }
+            const res = await fetch(`/review/${id}`);
+            if (!res.ok) { el.innerHTML = '<p style="color:#ffb3b3;">Failed to load article.</p>'; el.classList.remove('hidden'); return; }
+            const data = await res.json();
+            el.innerHTML = safeHTML(data.article.optimized_article_markdown);
+            el.classList.remove('hidden');
+        }
+
+        async function reviewAction(id, action) {
+            const note = prompt(`Optional note for this ${action}:`) || '';
+            const res = await fetch(`/review/${id}/${action}`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ note })
+            });
+            if (!res.ok) {
+                const err = await res.json();
+                alert(`Action failed: ${err.error || 'unknown error'}`);
+                return;
+            }
+            await loadCounts();
+            await loadQueue(currentStatus);
+        }
+
+        async function publishToWordPress(id, dryRun) {
+            const resultEl = document.getElementById(`wp-result-${id}`);
+            resultEl.classList.remove('hidden');
+            resultEl.innerHTML = '<p style="opacity:.7;">Working...</p>';
+
+            const res = await fetch(`/publish/wordpress/${id}?status=draft&dry_run=${dryRun}`, { method: 'POST' });
+            const data = await res.json();
+
+            if (!res.ok) {
+                resultEl.innerHTML = `<p style="color:#ffb3b3;">❌ ${data.error || 'Publish failed.'}</p>`;
+                return;
+            }
+
+            if (dryRun) {
+                resultEl.innerHTML = `<p style="color:#7ee6b0;">✅ Dry run OK — would send: <strong>${data.would_send.title}</strong> (status: ${data.would_send.status})</p>`;
+            } else {
+                resultEl.innerHTML = `<p style="color:#7ee6b0;">✅ Published! <a href="${data.post_url}" target="_blank" style="color:#7ee6b0;">View post</a> (WP status: ${data.status})</p>`;
+            }
+        }
+
+        document.querySelectorAll('.tab-btn').forEach(btn => {
+            btn.addEventListener('click', () => loadQueue(btn.dataset.status));
+        });
+
+        loadCounts();
+        loadQueue('draft');
+    </script>
+</body>
+</html>

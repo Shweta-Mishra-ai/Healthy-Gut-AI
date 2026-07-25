@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Healthy Gut AI | Dashboard</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <style>
+        .dash-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 1rem; margin-bottom: 1.5rem; }
+        .dash-card { background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.12); border-radius: 12px; padding: 1rem; text-align: center; }
+        .dash-card h3 { font-size: 1.8rem; margin: 0 0 0.25rem 0; }
+        .dash-card p { margin: 0; opacity: 0.7; font-size: 0.85rem; }
+        table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
+        th, td { text-align: left; padding: 0.5rem 0.75rem; border-bottom: 1px solid rgba(255,255,255,0.1); font-size: 0.9rem; }
+        th { opacity: 0.7; font-weight: 600; }
+        .pill { padding: 0.15rem 0.5rem; border-radius: 999px; font-size: 0.75rem; }
+        .pill-ok { background: rgba(80,220,150,0.2); color: #7ee6b0; }
+        .pill-fail { background: rgba(230,80,80,0.2); color: #ff9d9d; }
+        .pill-scope { background: rgba(245,158,11,0.2); color: #fbbf24; }
+    </style>
+</head>
+<body>
+    <div class="background-globes">
+        <div class="globe globe-1"></div>
+        <div class="globe globe-2"></div>
+    </div>
+    <main class="container">
+        <header>
+            <h1>Dashboard</h1>
+            <p>Generation history and quality trends for this running instance.</p>
+        </header>
+
+        <section class="generator-panel glass">
+            <div id="dash-summary" class="dash-grid"></div>
+            <h2 style="margin-top:0;">Recent Generations</h2>
+            <table id="dash-table">
+                <thead>
+                    <tr><th>Topic</th><th>Provider</th><th>Status</th><th>Quality</th><th>Words</th><th>Cached</th></tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </section>
+    </main>
+
+    <script>
+        async function loadDashboard() {
+            const res = await fetch('/dashboard/stats?recent=30');
+            const data = await res.json();
+
+            const summary = document.getElementById('dash-summary');
+            summary.innerHTML = `
+                <div class="dash-card"><h3>${data.total_requests}</h3><p>Total Requests</p></div>
+                <div class="dash-card"><h3>${data.succeeded}</h3><p>Succeeded</p></div>
+                <div class="dash-card"><h3>${data.out_of_scope}</h3><p>Out of Scope</p></div>
+                <div class="dash-card"><h3>${data.failed}</h3><p>Failed</p></div>
+                <div class="dash-card"><h3>${data.avg_quality_score}</h3><p>Avg Quality Score</p></div>
+                <div class="dash-card"><h3>${data.avg_word_count}</h3><p>Avg Word Count</p></div>
+                <div class="dash-card"><h3>${data.cache_hit_rate_percent}%</h3><p>Cache Hit Rate</p></div>
+            `;
+
+            const tbody = document.querySelector('#dash-table tbody');
+            if (!data.recent.length) {
+                tbody.innerHTML = '<tr><td colspan="6" style="opacity:.6;">No generations yet — try the main app first.</td></tr>';
+                return;
+            }
+            tbody.innerHTML = data.recent.map(r => `
+                <tr>
+                    <td>${r.topic}</td>
+                    <td>${r.provider || '—'}</td>
+                    <td><span class="pill ${r.success ? 'pill-ok' : 'pill-fail'}">${r.success ? 'OK' : 'Failed'}</span></td>
+                    <td>${r.success ? r.quality_score : '—'}</td>
+                    <td>${r.success ? r.word_count : '—'}</td>
+                    <td>${r.cached ? 'Yes' : 'No'}</td>
+                </tr>
+            `).join('');
+        }
+        loadDashboard();
+    </script>
+</body>
+</html>

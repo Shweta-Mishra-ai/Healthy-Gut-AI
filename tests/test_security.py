@@ -1,6 +1,27 @@
 import importlib
+import os
 
+import pytest
 from fastapi.testclient import TestClient
+
+
+@pytest.fixture(autouse=True)
+def _restore_config_state():
+    """These tests reload app.config/app.main to pick up a test-specific
+    API_KEY env var. monkeypatch automatically undoes the env var after
+    each test, but that alone does NOT undo the reload — the already-
+    reloaded Settings() instance keeps API_KEY='secret123' baked in, and
+    since app.main's middleware reads `settings` via a module-global lookup
+    at call time (not a snapshot), every OTHER test file's `from app.main
+    import app` object is affected too, causing spurious 401s across the
+    whole session. Reloading again here, after the env var is gone,
+    restores the clean unprotected state for every test that runs after
+    this file."""
+    yield
+    os.environ.pop("API_KEY", None)
+    from app import config, main
+    importlib.reload(config)
+    importlib.reload(main)
 
 
 def _reload_app_with_api_key(monkeypatch, key: str):

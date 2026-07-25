@@ -1,4 +1,5 @@
 import asyncio
+import json
 import logging
 import os
 import time
@@ -11,14 +12,18 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import ValidationError
 
 from app.cache import article_cache
+from app.cms_wordpress import is_configured as wp_is_configured, publish_post as wp_publish_post, test_connection as wp_test_connection
 from app.config import settings
+from app.dashboard import tracker
 from app.export import markdown_to_docx_bytes, markdown_to_pdf_bytes, build_batch_zip
+from app.internal_linking import find_related_articles
 from app.llm_providers import llm_generate
 from app.metrics import keyword_density, readability
 from app.quality import assess_quality
 from app.rag.retriever import is_in_domain
 from app.rate_limit import rate_limiter
-from app.schemas import BatchGenerateRequest, GenerateRequest
+from app.review import InvalidTransitionError, ReviewNotFoundError, ReviewStatus, review_store
+from app.schemas import BatchGenerateRequest, GenerateRequest, ReviewActionRequest
 
 logging.basicConfig(
     level=os.getenv("LOG_LEVEL", "INFO"),
@@ -47,14 +52,16 @@ def client_key(request: Request) -> str:
     return request.client.host if request.client else "unknown"
 
 
-PROTECTED_PATHS = ("/generate", "/generate/batch", "/export/docx", "/export/pdf", "/debug")
+PROTECTED_PATH_PREFIXES = (
+    "/generate", "/export", "/debug", "/review", "/dashboard", "/publish",
+)
 
 
 @app.middleware("http")
 async def rate_limit_and_logging_middleware(request: Request, call_next):
     start = time.time()
 
-    if settings.API_KEY and request.url.path in PROTECTED_PATHS:
+    if settings.API_KEY and request.url.path.startswith(PROTECTED_PATH_PREFIXES):
         provided = request.headers.get("x-api-key", "")
         if provided != settings.API_KEY:
             logger.warning("Rejected request to %s: missing/invalid API key", request.url.path)
@@ -116,6 +123,7 @@ def health():
         "providers_configured": providers_configured,
         "api_key_protected": bool(settings.API_KEY),
         "cache": article_cache.stats(),
+        "database": {"path": settings.DATABASE_PATH, "reviews": review_store.counts()["total"]},
     }
 
 
@@ -124,11 +132,18 @@ def debug():
     return {"routes": [r.path for r in app.routes]}
 
 
+@app.get("/internal-links")
+def internal_links(topic: str, keyword: str = "", exclude_id: str = "", top_k: int = 5):
+    top_k = max(1, min(top_k, 20))
+    results = find_related_articles(topic, keyword, exclude_review_id=exclude_id or None, top_k=top_k)
+    return {"topic": topic, "keyword": keyword, "suggestions": results}
+
+
 @app.get("/rag/preview")
 def rag_preview(topic: str, keyword: str = "", top_k: int = 3):
-    """Shows which knowledge-base chunks would be retrieved for a given
-    topic/keyword, with similarity scores — useful for demonstrating that
-    retrieval is real (ranked by relevance) rather than a hardcoded lookup."""
+    """Shows which knowledge-base chunks would be retrieved for a query, with
+    similarity scores — useful for demonstrating that retrieval is real
+    (ranked by relevance) rather than a hardcoded lookup."""
     from app.rag.retriever import retriever
 
     top_k = max(1, min(top_k, 10))
@@ -141,6 +156,144 @@ def rag_preview(topic: str, keyword: str = "", top_k: int = 3):
             for c in chunks
         ],
     }
+
+
+PILLAR_SECTIONS = [
+    ("Overview", 400), ("Causes/Triggers", 450), ("Symptoms", 450),
+    ("Diet & Management", 650), ("When to See a Doctor", 300), ("FAQs/Closing", 250),
+]
+SUPPORTING_SECTIONS = [
+    ("Overview", 175), ("Causes/Triggers", 225), ("Symptoms", 225),
+    ("Diet & Management", 350), ("When to See a Doctor", 175),
+]
+
+
+@app.get("/outline")
+def outline_preview(topic: str, keyword: str = "", geo: str = "", article_type: str = "supporting"):
+    """Deterministic outline preview — no LLM call, instant and free. Shows
+    the section structure, word budget per section, and which knowledge-base
+    topics will ground the article, so the user can sanity-check before
+    spending a generation on a topic that's out of scope or misconfigured."""
+    from app.rag.retriever import retriever
+
+    in_scope = is_in_domain(topic, keyword)
+    sections = PILLAR_SECTIONS if article_type == "pillar" else SUPPORTING_SECTIONS
+    target_min, target_max = (2500, 3000) if article_type == "pillar" else (1000, 1500)
+    matches = retriever.retrieve(f"{topic} {keyword}".strip(), top_k=3) if in_scope else []
+
+    return {
+        "topic": topic,
+        "keyword": keyword,
+        "geo_target": geo,
+        "article_type": article_type,
+        "in_scope": in_scope,
+        "scope_note": None if in_scope else OUT_OF_SCOPE_MESSAGE,
+        "target_word_count": f"{target_min}-{target_max}",
+        "planned_sections": [{"heading": h, "target_words": w} for h, w in sections],
+        "grounding_sources": [{"title": c["title"], "topic": c["topic"], "relevance_score": c["relevance_score"]} for c in matches],
+    }
+
+
+@app.get("/dashboard/stats")
+def dashboard_stats(recent: int = 20):
+    return tracker.summary(limit_recent=max(1, min(recent, 100)))
+
+
+@app.get("/review/counts")
+def review_counts():
+    return review_store.counts()
+
+
+@app.get("/review/queue")
+def review_queue(status: str = "draft", limit: int = 50):
+    valid_statuses = {s.value for s in ReviewStatus}
+    if status not in valid_statuses:
+        return JSONResponse(status_code=422, content={"error": f"status must be one of {sorted(valid_statuses)}"})
+    return {"items": review_store.list_queue(status=status, limit=limit)}
+
+
+@app.get("/review/{article_id}")
+def review_get(article_id: str):
+    try:
+        return review_store.get(article_id)
+    except ReviewNotFoundError as e:
+        return JSONResponse(status_code=404, content={"error": str(e)})
+
+
+@app.post("/review/{article_id}/approve")
+def review_approve(article_id: str, payload: ReviewActionRequest):
+    try:
+        item = review_store.set_status(article_id, ReviewStatus.approved, payload.note)
+        logger.info("Article %s approved%s", article_id, f" — {payload.note}" if payload.note else "")
+        return {"id": item["id"], "status": item["status"], "reviewed_at": item["reviewed_at"], "reviewer_note": item["reviewer_note"]}
+    except ReviewNotFoundError as e:
+        return JSONResponse(status_code=404, content={"error": str(e)})
+    except InvalidTransitionError as e:
+        return JSONResponse(status_code=409, content={"error": str(e)})
+
+
+@app.post("/review/{article_id}/reject")
+def review_reject(article_id: str, payload: ReviewActionRequest):
+    try:
+        item = review_store.set_status(article_id, ReviewStatus.rejected, payload.note)
+        logger.info("Article %s rejected%s", article_id, f" — {payload.note}" if payload.note else "")
+        return {"id": item["id"], "status": item["status"], "reviewed_at": item["reviewed_at"], "reviewer_note": item["reviewer_note"]}
+    except ReviewNotFoundError as e:
+        return JSONResponse(status_code=404, content={"error": str(e)})
+    except InvalidTransitionError as e:
+        return JSONResponse(status_code=409, content={"error": str(e)})
+
+
+@app.get("/publish/wordpress/status")
+def wordpress_status():
+    return {"configured": wp_is_configured(), "site_url": settings.WORDPRESS_URL or None}
+
+
+@app.post("/publish/wordpress/test-connection")
+def wordpress_test_connection():
+    result = wp_test_connection()
+    if not result["connected"]:
+        return JSONResponse(status_code=502, content=result)
+    return result
+
+
+@app.post("/publish/wordpress/{article_id}")
+def wordpress_publish(article_id: str, status: str = "draft", dry_run: bool = False):
+    if status not in ("draft", "publish"):
+        return JSONResponse(status_code=422, content={"error": "status must be 'draft' or 'publish'"})
+
+    try:
+        item = review_store.get(article_id)
+    except ReviewNotFoundError as e:
+        return JSONResponse(status_code=404, content={"error": str(e)})
+
+    if item["status"] != ReviewStatus.approved.value:
+        return JSONResponse(status_code=409, content={
+            "error": f"Article '{article_id}' is '{item['status']}', not 'approved' — only approved articles can be published."
+        })
+
+    article = item["article"]
+    result = wp_publish_post(
+        title=item["topic"],
+        article_markdown=article.get("optimized_article_markdown", ""),
+        excerpt=article.get("meta_description", ""),
+        slug=article.get("url_slug", ""),
+        status=status,
+        dry_run=dry_run,
+    )
+    if not result["success"]:
+        return JSONResponse(status_code=502, content=result)
+    return result
+
+
+@app.get("/review", response_class=HTMLResponse)
+def review_page():
+    return FileResponse(os.path.join(STATIC_DIR, "review.html"))
+
+
+@app.get("/dashboard", response_class=HTMLResponse)
+def dashboard_page():
+    return FileResponse(os.path.join(STATIC_DIR, "dashboard.html"))
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -158,17 +311,43 @@ OUT_OF_SCOPE_MESSAGE = (
 
 async def _generate_one(req: GenerateRequest) -> dict:
     if not is_in_domain(req.topic, req.primary_keyword):
+        tracker.record(topic=req.topic, provider="", success=False, out_of_scope=True)
         return {"error": OUT_OF_SCOPE_MESSAGE, "out_of_scope": True}
 
-    cache_key = article_cache.make_key(req.topic, req.primary_keyword, req.geo_target, req.article_type.value, req.language.value)
+    cache_key = article_cache.make_key(req.topic, req.primary_keyword, req.geo_target, req.article_type.value, req.language.value, req.tone.value)
     cached = article_cache.get(cache_key)
     if cached:
         result = dict(cached)
         result["cached"] = True
+
+        review_id = result.get("review_id")
+        review_still_exists = False
+        if review_id:
+            try:
+                review_store.get(review_id)
+                review_still_exists = True
+            except ReviewNotFoundError:
+                pass
+        if not review_still_exists:
+            # The cached content is still valid, but its review-workflow entry
+            # is gone (evicted from the review store, or storage was reset) —
+            # re-register it as a fresh draft rather than handing back a
+            # review_id that would 404 on every approve/reject/publish call.
+            new_review_id = review_store.register(result, req.topic, req.primary_keyword)
+            result["review_id"] = new_review_id
+            result["review_status"] = ReviewStatus.draft.value
+            article_cache.set(cache_key, result)
+
+        tracker.record(
+            topic=req.topic, provider=result.get("provider_used", ""), success=True, cached=True,
+            word_count=result.get("metrics", {}).get("wordCount", 0),
+            quality_score=result.get("quality", {}).get("score", 0),
+        )
         return result
 
-    result = await llm_generate(req.topic, req.primary_keyword, req.geo_target, req.article_type.value, req.language.value)
+    result = await llm_generate(req.topic, req.primary_keyword, req.geo_target, req.article_type.value, req.language.value, req.tone.value)
     if "error" in result:
+        tracker.record(topic=req.topic, provider="", success=False)
         return result
 
     article_md = result.get("optimized_article_markdown", "")
@@ -180,6 +359,14 @@ async def _generate_one(req: GenerateRequest) -> dict:
     result["quality"] = assess_quality(result, req.topic, req.primary_keyword, req.article_type.value)
     result["cached"] = False
     article_cache.set(cache_key, result)
+    review_id = review_store.register(result, req.topic, req.primary_keyword)
+    result["review_id"] = review_id
+    result["review_status"] = ReviewStatus.draft.value
+    result["internal_link_suggestions"] = find_related_articles(req.topic, req.primary_keyword, exclude_review_id=review_id)
+    tracker.record(
+        topic=req.topic, provider=result.get("provider_used", ""), success=True, cached=False,
+        word_count=result["metrics"]["wordCount"], quality_score=result["quality"]["score"],
+    )
     return result
 
 
@@ -241,6 +428,36 @@ async def export_batch_zip(payload: BatchGenerateRequest):
         content=zip_bytes,
         media_type="application/zip",
         headers={"Content-Disposition": 'attachment; filename="healthy-gut-ai-batch.zip"'},
+    )
+
+
+@app.post("/export/markdown")
+async def export_markdown(payload: GenerateRequest):
+    result = await _generate_one(payload)
+    if result.get("out_of_scope"):
+        return JSONResponse(status_code=422, content=result)
+    if "error" in result:
+        return JSONResponse(status_code=502, content=result)
+    filename = f"{payload.topic.lower().replace(' ', '-')}.md"
+    return Response(
+        content=result.get("optimized_article_markdown", ""),
+        media_type="text/markdown",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@app.post("/export/json")
+async def export_json(payload: GenerateRequest):
+    result = await _generate_one(payload)
+    if result.get("out_of_scope"):
+        return JSONResponse(status_code=422, content=result)
+    if "error" in result:
+        return JSONResponse(status_code=502, content=result)
+    filename = f"{payload.topic.lower().replace(' ', '-')}.json"
+    return Response(
+        content=json.dumps(result, indent=2, ensure_ascii=False),
+        media_type="application/json",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 
 
