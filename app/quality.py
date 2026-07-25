@@ -42,6 +42,16 @@ def assess_quality(result: dict, topic: str, primary_keyword: str, article_type:
         flags.append(f"Meta description is {len(meta)} characters — SEO best practice is ~120-160.")
         score -= 10
 
+    variants = result.get("meta_description_variants", []) or []
+    if len(variants) < 2:
+        flags.append(f"Only {len(variants)} meta description variant(s) available — 2-3 recommended for A/B testing.")
+        score -= 5
+    else:
+        bad_length = [v for v in variants if not (100 <= len(v) <= 170)]
+        if bad_length:
+            flags.append(f"{len(bad_length)} of {len(variants)} meta description variants are outside the ~120-160 character range.")
+            score -= 3
+
     if kw:
         opening = article_md.lower()[:250]
         if kw not in opening:

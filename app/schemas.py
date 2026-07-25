@@ -33,12 +33,21 @@ class Language(str, Enum):
     hi = "hi"
 
 
+class Tone(str, Enum):
+    educational = "educational"
+    authoritative = "authoritative"
+    patient_friendly = "patient_friendly"
+    academic = "academic"
+    seo_blog = "seo_blog"
+
+
 class GenerateRequest(BaseModel):
     topic: str = Field(..., min_length=3, max_length=200)
     primary_keyword: str = Field(..., min_length=2, max_length=100)
     geo_target: str = Field(..., min_length=2, max_length=100)
     article_type: ArticleType = ArticleType.supporting
     language: Language = Language.en
+    tone: Tone = Tone.educational
 
     @field_validator("topic")
     @classmethod
@@ -69,6 +78,18 @@ class BatchGenerateRequest(BaseModel):
         return v
 
 
+class ReviewActionRequest(BaseModel):
+    note: str = Field("", max_length=500)
+
+    @field_validator("note")
+    @classmethod
+    def v_note(cls, v):
+        v = (v or "").strip()
+        if v and _UNSAFE_CHARS.search(v):
+            raise ValueError("note contains disallowed characters (< > { } $ `)")
+        return v
+
+
 class FAQ(BaseModel):
     question: str
     answer: str
@@ -77,6 +98,7 @@ class FAQ(BaseModel):
 class ArticleResult(BaseModel):
     optimized_article_markdown: str
     meta_description: str = ""
+    meta_description_variants: List[str] = []
     url_slug: str = ""
     faqs: List[FAQ] = []
     schema_json_ld: dict = {}

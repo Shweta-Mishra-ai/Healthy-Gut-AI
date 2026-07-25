@@ -36,5 +36,14 @@ class Settings:
     # --- API auth (optional — if set, /generate*, /export/* require X-API-Key header) ---
     API_KEY: str = os.getenv("API_KEY", "")
 
+    # --- Persistent storage (SQLite) ---
+    DATABASE_PATH: str = os.getenv("DATABASE_PATH", "healthy_gut_ai.db")
+
+    # --- WordPress publishing (optional) ---
+    WORDPRESS_URL: str = os.getenv("WORDPRESS_URL", "").rstrip("/")
+    WORDPRESS_USERNAME: str = os.getenv("WORDPRESS_USERNAME", "")
+    WORDPRESS_APP_PASSWORD: str = os.getenv("WORDPRESS_APP_PASSWORD", "")
+    WORDPRESS_TIMEOUT_SECONDS: float = float(os.getenv("WORDPRESS_TIMEOUT_SECONDS", "15"))
+
 
 settings = Settings()
