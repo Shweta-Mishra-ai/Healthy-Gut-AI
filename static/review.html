@@ -47,28 +47,8 @@
         let currentStatus = 'draft';
 
         function safeHTML(markdown) {
-            if (!markdown) return '<p>No article content.</p>';
-            try {
-                if (window.marked && typeof window.marked.parse === 'function') {
-                    const raw = window.marked.parse(markdown);
-                    return window.DOMPurify ? window.DOMPurify.sanitize(raw) : raw;
-                }
-            } catch (e) {
-                console.warn('marked.js parsing failed:', e);
-            }
-            const escaped = (markdown || '')
-                .replace(/&/g, "&amp;")
-                .replace(/</g, "&lt;")
-                .replace(/>/g, "&gt;");
-            const formatted = escaped
-                .replace(/^# (.*$)/gim, '<h1>$1</h1>')
-                .replace(/^## (.*$)/gim, '<h2>$1</h2>')
-                .replace(/^### (.*$)/gim, '<h3>$1</h3>')
-                .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-                .replace(/\*(.*?)\*/g, '<em>$1</em>')
-                .replace(/\n\n/g, '</p><p>')
-                .replace(/\n/g, '<br>');
-            return `<p>${formatted}</p>`;
+            const raw = marked.parse(markdown || '');
+            return window.DOMPurify ? DOMPurify.sanitize(raw) : raw;
         }
 
         async function loadCounts() {
@@ -102,6 +82,7 @@
                         <span>Words: ${item.word_count ?? '—'}</span>
                         <span class="status-pill">${item.status}</span>
                     </div>
+                    ${item.reviewer_badge ? `<p style="color:#7ee6b0;font-size:0.85rem;">✅ ${item.reviewer_badge}</p>` : ''}
                     ${item.reviewer_note ? `<p style="opacity:.7;font-size:0.85rem;">Note: ${item.reviewer_note}</p>` : ''}
                     <div class="review-actions">
                         <button class="btn-small" onclick="viewArticle('${item.id}')">View Full Article</button>
@@ -132,9 +113,17 @@
 
         async function reviewAction(id, action) {
             const note = prompt(`Optional note for this ${action}:`) || '';
+            let reviewer_name = '';
+            let reviewer_credential = '';
+            if (action === 'approve') {
+                reviewer_name = prompt('Reviewer name (optional, e.g. "Dr. Priya Sharma"):') || '';
+                if (reviewer_name) {
+                    reviewer_credential = prompt('Credential (optional, e.g. "MBBS, Registered Medical Practitioner"):') || '';
+                }
+            }
             const res = await fetch(`/review/${id}/${action}`, {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ note })
+                body: JSON.stringify({ note, reviewer_name, reviewer_credential })
             });
             if (!res.ok) {
                 const err = await res.json();

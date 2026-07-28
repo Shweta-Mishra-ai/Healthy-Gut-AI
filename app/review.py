@@ -68,7 +68,8 @@ class ReviewStore:
             raise ReviewNotFoundError(f"No article found with id '{article_id}'")
         return self._row_to_full_dict(row)
 
-    def set_status(self, article_id: str, new_status: ReviewStatus, note: str = "") -> dict:
+    def set_status(self, article_id: str, new_status: ReviewStatus, note: str = "",
+                    reviewer_name: str = "", reviewer_credential: str = "") -> dict:
         conn = get_connection()
         with get_lock():
             row = conn.execute("SELECT status FROM reviews WHERE id = ?", (article_id,)).fetchone()
@@ -80,8 +81,9 @@ class ReviewStore:
                 )
             now = time.time()
             conn.execute(
-                "UPDATE reviews SET status = ?, reviewed_at = ?, reviewer_note = ? WHERE id = ?",
-                (new_status.value, now, note or None, article_id),
+                """UPDATE reviews SET status = ?, reviewed_at = ?, reviewer_note = ?,
+                   reviewer_name = ?, reviewer_credential = ? WHERE id = ?""",
+                (new_status.value, now, note or None, reviewer_name or None, reviewer_credential or None, article_id),
             )
             conn.commit()
             updated = conn.execute("SELECT * FROM reviews WHERE id = ?", (article_id,)).fetchone()
@@ -108,15 +110,27 @@ class ReviewStore:
         return counts
 
     @staticmethod
-    def _row_to_full_dict(row) -> dict:
+    def _reviewer_badge(d: dict) -> str | None:
+        name = d.get("reviewer_name")
+        credential = d.get("reviewer_credential")
+        if name and credential:
+            return f"Reviewed by {name}, {credential}"
+        if name:
+            return f"Reviewed by {name}"
+        return None
+
+    @classmethod
+    def _row_to_full_dict(cls, row) -> dict:
         d = dict(row)
         d["article"] = json.loads(d.pop("article_json"))
+        d["reviewer_badge"] = cls._reviewer_badge(d)
         return d
 
-    @staticmethod
-    def _row_to_summary_dict(row) -> dict:
+    @classmethod
+    def _row_to_summary_dict(cls, row) -> dict:
         d = dict(row)
         d.pop("article_json", None)
+        d["reviewer_badge"] = cls._reviewer_badge(d)
         return d
 
 

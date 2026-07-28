@@ -39,9 +39,22 @@ def init_db():
                 created_at REAL NOT NULL,
                 reviewed_at REAL,
                 reviewer_note TEXT,
+                reviewer_name TEXT,
+                reviewer_credential TEXT,
                 article_json TEXT NOT NULL
             )
         """)
+        # Idempotent migration for databases created before reviewer_name/
+        # reviewer_credential existed — CREATE TABLE IF NOT EXISTS above
+        # only applies to brand-new databases, so existing ones need these
+        # columns added explicitly. SQLite has no "ADD COLUMN IF NOT EXISTS",
+        # so we probe and swallow the specific "duplicate column" error only.
+        for column_def in ("reviewer_name TEXT", "reviewer_credential TEXT"):
+            try:
+                _conn.execute(f"ALTER TABLE reviews ADD COLUMN {column_def}")
+            except sqlite3.OperationalError as e:
+                if "duplicate column" not in str(e).lower():
+                    raise
         _conn.execute("CREATE INDEX IF NOT EXISTS idx_reviews_status ON reviews(status)")
         _conn.execute("CREATE INDEX IF NOT EXISTS idx_reviews_created ON reviews(created_at)")
 

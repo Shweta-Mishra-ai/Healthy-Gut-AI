@@ -79,3 +79,17 @@ def test_rate_limiting():
     assert 429 in statuses
     rate_limiter._limit = 10
     rate_limiter._hits.clear()
+
+
+def test_debug_endpoint_lists_routes_without_crashing():
+    """Regression test: after splitting main.py into routers, /debug crashed
+    with AttributeError because some entries in app.routes (sub-router
+    mount wrappers) don't have a .path attribute — this went uncaught by
+    133 passing tests because /debug had zero test coverage before."""
+    r = client.get("/debug")
+    assert r.status_code == 200
+    routes = r.json()["routes"]
+    assert "/generate" in routes
+    assert "/health" in routes
+    assert "/review" in routes
+    assert "/publish/wordpress/{article_id}" in routes

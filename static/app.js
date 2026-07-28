@@ -38,6 +38,7 @@ document.getElementById('generate-form').addEventListener('submit', async (e) =>
     const btn = document.getElementById('generate-btn');
     const article_type = document.getElementById('article_type').value;
     const language = document.getElementById('language').value;
+    const tone = document.getElementById('tone').value;
 
     btn.disabled = true;
     loading.classList.remove('hidden');
@@ -49,7 +50,7 @@ document.getElementById('generate-form').addEventListener('submit', async (e) =>
                 topic: document.getElementById('topic').value,
                 primary_keyword: document.getElementById('primary_keyword').value,
                 geo_target: document.getElementById('geo_target').value,
-                article_type, language
+                article_type, language, tone
             };
             state.lastRequests = [payload];
             const res = await fetch('/generate', {
@@ -64,50 +65,26 @@ document.getElementById('generate-form').addEventListener('submit', async (e) =>
             }
         } else {
             const rawItems = parseBatchInput(document.getElementById('batch_topics').value)
-                .map(it => ({ ...it, article_type, language }));
+                .map(it => ({ ...it, article_type, language, tone }));
             if (rawItems.length === 0) {
                 showError('Add at least one topic line (topic | keyword | geo).');
                 return;
             }
             state.lastRequests = rawItems;
-
-            const loadingText = loading.querySelector('p');
-            const total = rawItems.length;
-            const results = [];
-
-            for (let i = 0; i < total; i++) {
-                const item = rawItems[i];
-                if (loadingText) {
-                    loadingText.textContent = `Generating article ${i + 1} of ${total}: "${item.topic || 'Item ' + (i + 1)}"...`;
-                }
-                try {
-                    const res = await fetch('/generate', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(item)
-                    });
-                    const data = await res.json();
-                    if (!res.ok) {
-                        results.push({ error: data.error || `HTTP ${res.status}`, topic: item.topic, out_of_scope: data.out_of_scope });
-                    } else {
-                        results.push(data);
-                    }
-                } catch (itemErr) {
-                    results.push({ error: itemErr.message || 'Request failed', topic: item.topic });
-                }
-            }
-
-            const okCount = results.filter(r => !r.error).length;
-            renderBatchResults({
-                results: results,
-                total: total,
-                succeeded: okCount,
-                failed: total - okCount
+            const res = await fetch('/generate/batch', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ items: rawItems })
             });
+            const data = await res.json();
+            if (!res.ok) {
+                showError(formatError(res.status, data));
+            } else {
+                renderBatchResults(data);
+            }
         }
     } catch (err) {
-        console.error('Submit handler error:', err);
-        showError(err.message || 'Failed to connect to backend. Check your connection and try again.');
+        console.error(err);
+        showError('Failed to connect to backend. Check your connection and try again.');
     } finally {
         btn.disabled = false;
         loading.classList.add('hidden');
@@ -132,58 +109,37 @@ function formatError(status, data) {
 }
 
 function safeHTML(markdown) {
-    if (!markdown) return '<p>No article content generated.</p>';
-    try {
-        if (window.marked && typeof window.marked.parse === 'function') {
-            const raw = window.marked.parse(markdown);
-            return window.DOMPurify ? window.DOMPurify.sanitize(raw) : raw;
-        }
-    } catch (e) {
-        console.warn('marked.js parsing failed, using fallback:', e);
+    const raw = marked.parse(markdown || 'No article content generated.');
+    return window.DOMPurify ? DOMPurify.sanitize(raw) : raw;
+}
+
+function internalLinksBlock(suggestions) {
+    if (!suggestions || !suggestions.length) {
+        return `<div class="seo-meta"><p style="opacity:.6;font-size:0.85rem;">No internal linking suggestions yet — approve a few related articles first (Review Queue) to start building an SEO cluster.</p></div>`;
     }
-    const escaped = (markdown || '')
-        .replace(/&/g, "&amp;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;");
-    const formatted = escaped
-        .replace(/^# (.*$)/gim, '<h1>$1</h1>')
-        .replace(/^## (.*$)/gim, '<h2>$1</h2>')
-        .replace(/^### (.*$)/gim, '<h3>$1</h3>')
-        .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-        .replace(/\*(.*?)\*/g, '<em>$1</em>')
-        .replace(/\n\n/g, '</p><p>')
-        .replace(/\n/g, '<br>');
-    return `<p>${formatted}</p>`;
+    const items = suggestions.map(s => `
+        <li>
+            <strong>${s.topic}</strong> <span style="opacity:.6;">(relevance ${s.relevance_score})</span>
+            <br><small style="opacity:.6;">/${s.url_slug || ''}</small>
+        </li>
+    `).join('');
+    return `
+        <div class="seo-meta">
+            <p><strong>🔗 Suggested Internal Links (from approved articles):</strong></p>
+            <ul>${items}</ul>
+        </div>
+    `;
 }
 
 function metricsBlock(data) {
     const density = data.metrics?.keywordDensity?.keywordDensityPercent ?? 0;
     const readability = data.metrics?.readability?.fleschReadingEase ?? 0;
     const words = data.metrics?.wordCount ?? 0;
-    const quality = data.quality?.score;
-
-    let qualityHtml = '';
-    if (quality !== undefined) {
-        const flags = data.quality.flags || [];
-        const flagsList = flags.length > 0
-            ? `<ul style="text-align: left; font-size: 0.85em; color: #b91c1c; margin-top: 0.5rem; padding-left: 1.2rem; line-height: 1.4;">` + flags.map(f => `<li>${f}</li>`).join('') + `</ul>`
-            : `<p style="color: #10B981; font-size: 0.85em; margin-top: 0.5rem; font-weight: 600;">✓ Passed all quality checks</p>`;
-
-        qualityHtml = `
-            <div class="metric-card" style="grid-column: span 3; text-align: center;">
-                <h3 style="color: ${quality >= 80 ? '#10B981' : quality >= 50 ? '#F59E0B' : '#EF4444'};">${quality}/100</h3>
-                <p>Programmatic Quality Score</p>
-                ${flagsList}
-            </div>
-        `;
-    }
-
     return `
         <div class="metrics-grid">
             <div class="metric-card"><h3>${words}</h3><p>Word Count</p></div>
             <div class="metric-card"><h3>${density}%</h3><p>Keyword Density</p></div>
             <div class="metric-card"><h3>${readability}</h3><p>Readability Score</p></div>
-            ${qualityHtml}
         </div>`;
 }
 
@@ -198,23 +154,37 @@ function renderSingleResult(data) {
                 <button class="btn-primary" style="width:auto;padding:.5rem 1rem;margin-top:0;" onclick="window.print()">Print / PDF</button>
                 <button class="btn-primary" style="width:auto;padding:.5rem 1rem;margin-top:0;" id="export-docx-btn">Download DOCX</button>
                 <button class="btn-primary" style="width:auto;padding:.5rem 1rem;margin-top:0;" id="export-pdf-btn">Download PDF</button>
+                <button class="btn-primary" style="width:auto;padding:.5rem 1rem;margin-top:0;" id="export-md-btn">Download .md</button>
+                <button class="btn-primary" style="width:auto;padding:.5rem 1rem;margin-top:0;" id="export-json-btn">Download .json</button>
                 <button class="btn-primary" style="width:auto;padding:.5rem 1rem;margin-top:0;" id="copy-article-btn">📋 Copy</button>
             </div>
         </div>
         ${metricsBlock(data)}
         <div class="article-content">${safeHTML(data.optimized_article_markdown)}</div>
         <div class="seo-meta">
-            <p><strong>Meta Description:</strong> ${data.meta_description || ''}</p>
+            <p><strong>Meta Description Variants (A/B):</strong></p>
+            <ul class="meta-variants-list">
+                ${(data.meta_description_variants || [data.meta_description || '']).map((v, i) => `
+                    <li>
+                        <span>${v}</span>
+                        <small style="opacity:.6;">(${v.length} chars)</small>
+                        <button class="btn-small-copy" onclick='copyToClipboard(${JSON.stringify(v)}, this)'>📋</button>
+                    </li>
+                `).join('')}
+            </ul>
             <p><strong>URL Slug:</strong> /${data.url_slug || ''}</p>
             <p><strong>Soft CTA:</strong> ${data.cta_soft || ''}</p>
             <p><strong>Direct CTA:</strong> ${data.cta_direct || ''}</p>
         </div>
+        ${internalLinksBlock(data.internal_link_suggestions)}
     `;
     resultsPanel.classList.remove('hidden');
     resultsPanel.scrollIntoView({ behavior: 'smooth' });
 
     document.getElementById('export-docx-btn').onclick = () => downloadExport('docx');
     document.getElementById('export-pdf-btn').onclick = () => downloadExport('pdf');
+    document.getElementById('export-md-btn').onclick = () => downloadExport('markdown', 'md');
+    document.getElementById('export-json-btn').onclick = () => downloadExport('json');
     document.getElementById('copy-article-btn').onclick = (e) => copyToClipboard(state.lastSingleMarkdown, e.target);
 }
 
@@ -230,7 +200,8 @@ async function copyToClipboard(text, buttonEl) {
     setTimeout(() => { buttonEl.textContent = original; }, 1800);
 }
 
-async function downloadExport(kind) {
+async function downloadExport(kind, ext) {
+    ext = ext || kind;
     const payload = state.lastRequests[0];
     if (!payload) return;
     try {
@@ -238,16 +209,16 @@ async function downloadExport(kind) {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload)
         });
-        if (!res.ok) { showError(`Export to ${kind} failed.`); return; }
+        if (!res.ok) { showError(`Export to ${ext} failed.`); return; }
         const blob = await res.blob();
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `${(payload.topic || 'article').toLowerCase().replace(/\s+/g, '-')}.${kind}`;
+        a.download = `${(payload.topic || 'article').toLowerCase().replace(/\s+/g, '-')}.${ext}`;
         a.click();
         URL.revokeObjectURL(url);
     } catch (err) {
-        showError(`Export to ${kind} failed: ${err.message}`);
+        showError(`Export to ${ext} failed: ${err.message}`);
     }
 }
 
@@ -347,3 +318,45 @@ async function downloadBatchZip() {
         btn.textContent = originalText;
     }
 }
+
+document.getElementById('preview-outline-btn').addEventListener('click', async () => {
+    const topic = document.getElementById('topic').value.trim();
+    const keyword = document.getElementById('primary_keyword').value.trim();
+    const geo = document.getElementById('geo_target').value.trim();
+    const article_type = document.getElementById('article_type').value;
+
+    if (!topic) {
+        showError('Enter a topic first to preview its outline.');
+        return;
+    }
+
+    const previewEl = document.getElementById('outline-preview');
+    previewEl.classList.remove('hidden');
+    previewEl.innerHTML = '<p style="opacity:.7;">Loading outline preview...</p>';
+
+    try {
+        const params = new URLSearchParams({ topic, keyword, geo, article_type });
+        const res = await fetch(`/outline?${params.toString()}`);
+        const data = await res.json();
+
+        if (!data.in_scope) {
+            previewEl.innerHTML = `<p style="color:#ffb3b3;">⚠ ${data.scope_note}</p>`;
+            return;
+        }
+
+        const sections = data.planned_sections.map(s => `<li>${s.heading} <span style="opacity:.6;">(~${s.target_words} words)</span></li>`).join('');
+        const sources = data.grounding_sources.map(s => `<li>${s.title} <span style="opacity:.6;">(relevance ${s.relevance_score})</span></li>`).join('');
+
+        previewEl.innerHTML = `
+            <div class="glass" style="padding:1rem; margin: 0.75rem 0;">
+                <p><strong>Target length:</strong> ${data.target_word_count} words</p>
+                <p><strong>Planned structure:</strong></p>
+                <ul>${sections}</ul>
+                <p><strong>Will be grounded in:</strong></p>
+                <ul>${sources || '<li>General gut-health context</li>'}</ul>
+            </div>
+        `;
+    } catch (err) {
+        previewEl.innerHTML = `<p style="color:#ffb3b3;">Outline preview failed: ${err.message}</p>`;
+    }
+});

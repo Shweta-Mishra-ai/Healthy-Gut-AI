@@ -14,6 +14,40 @@ def test_mock_result_has_3_variants():
     assert all(isinstance(v, str) and v for v in variants)
 
 
+def test_mock_result_hindi_produces_devanagari_content():
+    """Regression test for a real bug: mock mode previously ignored the
+    language parameter entirely and always returned English, even when
+    'hi' was requested — meaning anyone testing/demoing without a live
+    LLM key configured would never see Hindi output."""
+    result = _mock_result("IBS diet plan", "IBS diet", "India", language="hi")
+    article = result["optimized_article_markdown"]
+    has_devanagari = any("\u0900" <= ch <= "\u097F" for ch in article)
+    assert has_devanagari
+    assert "चिकित्सा अस्वीकरण" in article  # Hindi disclaimer marker present
+
+
+def test_mock_result_english_default_has_no_devanagari():
+    result = _mock_result("IBS diet plan", "IBS diet", "USA")
+    article = result["optimized_article_markdown"]
+    has_devanagari = any("\u0900" <= ch <= "\u097F" for ch in article)
+    assert not has_devanagari
+
+
+def test_mock_result_hindi_has_translated_ctas_and_faqs():
+    result = _mock_result("IBS diet plan", "IBS diet", "India", language="hi")
+    assert any("\u0900" <= ch <= "\u097F" for ch in result["cta_direct"])
+    assert any("\u0900" <= ch <= "\u097F" for ch in result["cta_soft"])
+    assert any("\u0900" <= ch <= "\u097F" for ch in result["faqs"][0]["question"])
+
+
+def test_generate_endpoint_respects_hindi_language_in_mock_mode():
+    payload = {"topic": "IBS diet plan", "primary_keyword": "IBS diet", "geo_target": "India", "language": "hi"}
+    r = client.post("/generate", json=payload)
+    assert r.status_code == 200
+    article = r.json()["optimized_article_markdown"]
+    assert any("\u0900" <= ch <= "\u097F" for ch in article)
+
+
 def test_generate_endpoint_returns_variants():
     payload = {"topic": "GERD relief variants test", "primary_keyword": "acid reflux", "geo_target": "UK"}
     r = client.post("/generate", json=payload)

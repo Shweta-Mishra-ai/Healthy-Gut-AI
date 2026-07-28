@@ -60,6 +60,8 @@ def markdown_to_pdf_bytes(title: str, markdown_text: str) -> bytes:
         pdf.multi_cell(0, 7, safe, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
 
     out = pdf.output()
+    if isinstance(out, str):
+        return out.encode("latin-1", "replace")
     return bytes(out)
 
 
