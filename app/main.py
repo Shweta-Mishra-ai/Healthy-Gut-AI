@@ -99,7 +99,8 @@ async def pydantic_validation_handler(request: Request, exc: ValidationError):
     return JSONResponse(status_code=422, content={"error": "Validation failed", "details": _serializable_errors(exc.errors())})
 
 
-@app.get("/health")
+@app.api_route("/health", methods=["GET", "HEAD"])
+@app.api_route("/api/v1/health", methods=["GET", "HEAD"])
 def health():
     providers_configured = {
         "groq": bool(settings.GROQ_API_KEY),
