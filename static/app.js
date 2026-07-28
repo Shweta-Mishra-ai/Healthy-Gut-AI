@@ -109,7 +109,19 @@ function formatError(status, data) {
 }
 
 function safeHTML(markdown) {
-    const raw = marked.parse(markdown || 'No article content generated.');
+    if (!markdown) return 'No article content generated.';
+    let raw = '';
+    if (window.marked && typeof window.marked.parse === 'function') {
+        raw = window.marked.parse(markdown);
+    } else {
+        raw = markdown
+            .replace(/^# (.*$)/gim, '<h1>$1</h1>')
+            .replace(/^## (.*$)/gim, '<h2>$1</h2>')
+            .replace(/^### (.*$)/gim, '<h3>$1</h3>')
+            .replace(/\*\*(.*?)\*\*/gim, '<strong>$1</strong>')
+            .replace(/\*(.*?)\*/gim, '<em>$1</em>')
+            .replace(/\n\n/gim, '<br><br>');
+    }
     return window.DOMPurify ? DOMPurify.sanitize(raw) : raw;
 }
 
