@@ -4,6 +4,7 @@ import logging
 import re
 
 from app.config import settings
+from app.quality import DISCLAIMER_MARKERS
 from app.rag.retriever import build_rag_context
 
 logger = logging.getLogger("healthy_gut_ai.llm")
@@ -19,6 +20,10 @@ def _extract_json(raw: str) -> dict:
     This pulls the first {...} block out and parses it, raising a clear
     error if nothing parseable is found, instead of crashing on json.loads."""
     raw = raw.strip()
+    # Strip markdown code block wrappers if present (e.g. ```json ... ```)
+    if raw.startswith("```"):
+        raw = re.sub(r"^```(?:json)?\s*", "", raw, flags=re.IGNORECASE)
+        raw = re.sub(r"\s*```$", "", raw).strip()
     try:
         return json.loads(raw)
     except json.JSONDecodeError:
@@ -32,9 +37,47 @@ def _extract_json(raw: str) -> dict:
     raise ValueError("Model response contained no JSON object")
 
 
-def _mock_result(topic: str, keyword: str, geo: str) -> dict:
+def _mock_result(topic: str, keyword: str, geo: str, language: str = "en") -> dict:
     ctx = rag_context(topic, keyword)
-    article = f"""# {topic.title()}: Your Complete Guide
+
+    if language == "hi":
+        article = f"""# {topic.title()}: आपकी संपूर्ण गाइड
+
+**{keyword}** आज गट हेल्थ (पाचन तंत्र) से जुड़े सबसे ज़्यादा खोजे जाने वाले विषयों में से एक है।
+
+## {topic} क्या है?
+{topic.title()} पाचन तंत्र से जुड़ी एक स्थिति है, जो **{geo}** सहित दुनिया भर में लाखों लोगों को प्रभावित करती है। यह सामान्य पाचन विकारों में से एक है जिसके लिए सही जानकारी और समय पर देखभाल ज़रूरी है।
+
+## आम लक्षण
+- पेट में असुविधा या दर्द
+- सूजन (ब्लोटिंग) और गैस
+- मल त्याग की आदतों में बदलाव
+
+## डाइट सुझाव
+| खाने योग्य चीज़ें | परहेज़ करने योग्य चीज़ें |
+|---|---|
+| फर्मेंटेड दही | तली हुई चीज़ें |
+| फाइबर युक्त सब्ज़ियाँ | प्रोसेस्ड स्नैक्स |
+| अदरक की चाय | कार्बोनेटेड ड्रिंक्स |
+
+## डॉक्टर से कब मिलें
+अगर लक्षण 3 हफ्तों से ज़्यादा बने रहें, तो **{geo}** में किसी गैस्ट्रोएंटेरोलॉजिस्ट से सलाह लें।
+
+---
+*चिकित्सा अस्वीकरण: यह लेख केवल शैक्षिक उद्देश्यों के लिए है और पेशेवर चिकित्सा सलाह का विकल्प नहीं है।*"""
+        meta_variants = [
+            f"{keyword} के बारे में हमारी विशेषज्ञ गाइड पढ़ें, {geo} के लिए तैयार। लक्षण, डाइट टिप्स जानें।",
+            f"क्या आप {keyword} से जूझ रहे हैं? {geo} के लिए कारण, लक्षण और प्रबंधन के तरीके जानें।",
+            f"{topic.title()} पूरी जानकारी: {geo} के पाठकों के लिए लक्षण, डाइट और देखभाल की जानकारी।",
+        ]
+        faqs = [
+            {"question": f"{topic} क्या है?", "answer": f"{topic.title()} एक सामान्य पाचन-तंत्र संबंधी स्थिति है जिसमें जीवनशैली और आहार में बदलाव से राहत मिल सकती है।"},
+            {"question": f"क्या {topic} {geo} में आम है?", "answer": f"हाँ, {topic} {geo} में कई लोगों को प्रभावित करता है।"},
+        ]
+        cta_soft = "गट हेल्थ से जुड़े और मुफ़्त संसाधन हमारे ब्लॉग पर देखें।"
+        cta_direct = f"आज ही Healthy Gut AI मुफ़्त में आज़माएँ — {geo} के लिए पर्सनलाइज़्ड प्लान!"
+    else:
+        article = f"""# {topic.title()}: Your Complete Guide
 
 **{keyword}** is one of the most searched topics in gut health today.
 
@@ -60,22 +103,27 @@ If symptoms persist for more than 3 weeks, consult a gastroenterologist in **{ge
 
 ---
 *Medical Disclaimer: This article is educational and not a substitute for professional medical advice.*"""
-    return {
-        "optimized_article_markdown": article,
-        "meta_description": f"Learn about {keyword} with our expert guide targeting {geo}. Find symptoms, diet tips, and when to seek help.",
-        "meta_description_variants": [
+        meta_variants = [
             f"Learn about {keyword} with our expert guide targeting {geo}. Find symptoms, diet tips, and when to seek help.",
             f"Struggling with {keyword}? Discover causes, symptoms, and management options tailored for {geo}.",
             f"{topic.title()} explained: what {geo} readers need to know about symptoms, diet, and care.",
-        ],
-        "url_slug": topic.lower().replace(" ", "-") + "-guide",
-        "faqs": [
+        ]
+        faqs = [
             {"question": f"What is {topic}?", "answer": ctx},
             {"question": f"Is {topic} common in {geo}?", "answer": f"Yes, {topic} affects many people in {geo}."},
-        ],
+        ]
+        cta_soft = "Explore more free gut health resources on our blog."
+        cta_direct = f"Try Healthy Gut AI FREE today — personalized plans for {geo}!"
+
+    return {
+        "optimized_article_markdown": article,
+        "meta_description": meta_variants[0],
+        "meta_description_variants": meta_variants,
+        "url_slug": topic.lower().replace(" ", "-") + "-guide",
+        "faqs": faqs,
         "schema_json_ld": {"@context": "https://schema.org", "@type": "Article", "headline": f"{topic} Guide"},
-        "cta_soft": "Explore more free gut health resources on our blog.",
-        "cta_direct": f"Try Healthy Gut AI FREE today — personalized plans for {geo}!",
+        "cta_soft": cta_soft,
+        "cta_direct": cta_direct,
         "provider_used": "mock",
     }
 
@@ -91,7 +139,17 @@ TONE_INSTRUCTIONS = {
 
 def _build_prompts(topic, keyword, geo, article_type, language, tone="educational"):
     ctx = rag_context(topic, keyword)
-    lang_instr = "Write the article in Hindi (Devanagari script)." if language == "hi" else "Write the article in English."
+    if language == "hi":
+        lang_instr = (
+            "Write the ENTIRE article in Hindi (Devanagari script) — every sentence, every heading, "
+            "every FAQ answer, the meta description, and CTAs must all be in Hindi. The VERIFIED MEDICAL "
+            "CONTEXT below is provided in English for accuracy — translate its facts into Hindi as you "
+            "use them; do NOT copy any English sentence verbatim into the article. Medical proper nouns "
+            "(e.g. drug or condition names without a common Hindi equivalent) may stay in English, but "
+            "surrounding explanatory text must not."
+        )
+    else:
+        lang_instr = "Write the article in English."
     tone_instr = TONE_INSTRUCTIONS.get(tone, TONE_INSTRUCTIONS["educational"])
 
     if article_type == "pillar":
@@ -142,10 +200,17 @@ Include: H1 with keyword, a comparison table (foods to eat vs. avoid, or similar
 section, and the medical disclaimer at the end.
 Output: Markdown only, no commentary before or after."""
 
+    lang_reinforce = (
+        "\nIMPORTANT: This article is in Hindi. Keep optimized_article_markdown, meta_description, "
+        "meta_description_variants, faqs, cta_soft, and cta_direct ALL in Hindi — do not translate "
+        "anything back into English or mix languages within a single field."
+        if language == "hi" else ""
+    )
     prompt2 = f"""Optimize the following article for SEO and geo-target "{geo}".
 Keyword: {keyword}
 Preserve all factual content AND the full length of the article body — do not shorten, summarize, or drop
 sections while optimizing; only add SEO metadata around it.
+{lang_reinforce}
 
 For meta_description_variants, write exactly 3 alternative meta descriptions, each 120-160 characters,
 each including the keyword, but with genuinely different angles:
@@ -163,7 +228,7 @@ Article:
     return prompt1, prompt2
 
 
-_DISCLAIMER_MARKERS = ("disclaimer", "not a substitute for professional", "consult a", "consult your doctor")
+
 
 
 def _ensure_meta_variants(result: dict) -> dict:
@@ -192,17 +257,19 @@ def _ensure_meta_variants(result: dict) -> dict:
     return result
 
 
-def _append_references(article_markdown: str, matched_chunks: list) -> str:
+def _append_references(article_markdown: str, matched_chunks: list, language: str = "en") -> str:
     """Appends a real 'Sources Referenced' section listing the actual
     knowledge-base chunks used to ground this article — verifiable, not
     fabricated citations. Skips if already present (idempotent)."""
-    if "## sources referenced" in article_markdown.lower() or "## references" in article_markdown.lower():
+    if "## sources referenced" in article_markdown.lower() or "## references" in article_markdown.lower() or "## संदर्भित स्रोत" in article_markdown:
         return article_markdown
     if not matched_chunks:
         return article_markdown
-    lines = ["\n\n## Sources Referenced", ""]
+    heading = "## संदर्भित स्रोत" if language == "hi" else "## Sources Referenced"
+    source_label = "आंतरिक मेडिकल नॉलेज बेस" if language == "hi" else "internal medical knowledge base"
+    lines = [f"\n\n{heading}", ""]
     for c in matched_chunks:
-        lines.append(f"- {c['title']} — internal medical knowledge base (topic: {c['topic']})")
+        lines.append(f"- {c['title']} — {source_label} (topic: {c['topic']})")
     return article_markdown.rstrip() + "\n" + "\n".join(lines)
 
 
@@ -211,7 +278,7 @@ def _ensure_disclaimer(article_markdown: str) -> str:
     every article carries a medical disclaimer, regardless of provider or
     whether the model followed the prompt instruction."""
     lower = article_markdown.lower()
-    if any(marker in lower for marker in _DISCLAIMER_MARKERS):
+    if any(marker in lower for marker in DISCLAIMER_MARKERS):
         return article_markdown
     return (
         article_markdown.rstrip()
@@ -288,7 +355,7 @@ async def llm_generate(topic: str, keyword: str, geo: str, article_type: str, la
     if result is None:
         if providers:
             logger.error("All LLM providers failed, falling back to mock. Errors: %s", errors)
-        result = _mock_result(topic, keyword, geo)
+        result = _mock_result(topic, keyword, geo, language)
         if errors:
             result["provider_note"] = "All configured providers failed; served mock content. " + " | ".join(errors)
 
@@ -299,6 +366,6 @@ async def llm_generate(topic: str, keyword: str, geo: str, article_type: str, la
     ]
     if "optimized_article_markdown" in result:
         result["optimized_article_markdown"] = _ensure_disclaimer(result["optimized_article_markdown"])
-        result["optimized_article_markdown"] = _append_references(result["optimized_article_markdown"], matched_chunks)
+        result["optimized_article_markdown"] = _append_references(result["optimized_article_markdown"], matched_chunks, language)
     result = _ensure_meta_variants(result)
     return result

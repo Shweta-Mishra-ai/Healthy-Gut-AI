@@ -19,6 +19,7 @@
         <header>
             <h1>Healthy Gut AI</h1>
             <p>Generate precise, medically accurate, and SEO-optimized gut health articles.</p>
+            <p><a href="/dashboard" style="opacity:0.7;font-size:0.85rem;">📊 View Dashboard</a> · <a href="/review" style="opacity:0.7;font-size:0.85rem;">✅ Review Queue</a></p>
         </header>
 
         <section class="generator-panel glass">
@@ -66,7 +67,20 @@ GERD relief | acid reflux remedies | UK"></textarea>
                             <option value="hi">Hindi</option>
                         </select>
                     </div>
+                    <div class="col">
+                        <label for="tone">Tone</label>
+                        <select id="tone" name="tone">
+                            <option value="educational" selected>Educational</option>
+                            <option value="authoritative">Authoritative/Clinical</option>
+                            <option value="patient_friendly">Patient-Friendly</option>
+                            <option value="academic">Academic</option>
+                            <option value="seo_blog">SEO Blog</option>
+                        </select>
+                    </div>
                 </div>
+
+                <button type="button" id="preview-outline-btn" class="btn-primary" style="background:transparent;border:1px solid rgba(255,255,255,0.25);">👁 Preview Outline (free, no generation)</button>
+                <div id="outline-preview" class="hidden"></div>
 
                 <button type="submit" id="generate-btn" class="btn-primary">Generate Article</button>
             </form>

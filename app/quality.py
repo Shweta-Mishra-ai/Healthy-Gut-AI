@@ -15,8 +15,35 @@ WORD_TARGETS = {
 
 _SLUG_RE = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
 
+# Shared with app/llm_providers.py::_ensure_disclaimer — kept here as the
+# single source of truth so the two checks can't drift out of sync (which
+# is exactly what happened before: this list was English-only while the
+# generation-side safety net already recognized Hindi markers).
+DISCLAIMER_MARKERS = (
+    "disclaimer", "not a substitute for professional", "consult a", "consult your doctor",
+    "अस्वीकरण", "चिकित्सा सलाह",  # Hindi: "disclaimer", "medical advice"
+)
 
-def assess_quality(result: dict, topic: str, primary_keyword: str, article_type: str) -> dict:
+# Unicode block ranges used to measure script purity for non-English languages.
+# Only Hindi is supported as a generation language today (see app/schemas.py
+# Language enum) — extend this dict if more languages are added.
+_LANGUAGE_SCRIPT_RANGES = {
+    "hi": ("\u0900", "\u097F"),  # Devanagari
+}
+_MIN_SCRIPT_PURITY = 0.5
+
+
+def _script_purity(text: str, lo: str, hi: str) -> float:
+    """Fraction of alphabetic characters falling inside the target script's
+    Unicode range. Returns 1.0 for empty/no-letter text (nothing to flag)."""
+    letters = [ch for ch in text if ch.isalpha()]
+    if not letters:
+        return 1.0
+    in_script = sum(1 for ch in letters if lo <= ch <= hi)
+    return in_script / len(letters)
+
+
+def assess_quality(result: dict, topic: str, primary_keyword: str, article_type: str, language: str = "en") -> dict:
     flags: list[str] = []
     score = 100
 
@@ -78,13 +105,24 @@ def assess_quality(result: dict, topic: str, primary_keyword: str, article_type:
             flags.append(f"Readability score ({readability}) is unusually simplistic for medical content.")
             score -= 5
 
-    disclaimer_present = any(
-        marker in article_md.lower()
-        for marker in ("disclaimer", "not a substitute for professional", "consult a")
-    )
+    disclaimer_present = any(marker in article_md.lower() for marker in DISCLAIMER_MARKERS)
     if not disclaimer_present:
         flags.append("No medical disclaimer detected in the article body.")
         score -= 15
+
+    if language in _LANGUAGE_SCRIPT_RANGES:
+        # Exclude the auto-appended sources/references section — citation
+        # titles are expected to keep English proper nouns even in a
+        # non-English article, and shouldn't count against language purity.
+        body_for_check = re.split(r"##\s*(Sources Referenced|संदर्भित स्रोत|References)", article_md)[0]
+        lo, hi = _LANGUAGE_SCRIPT_RANGES[language]
+        purity = _script_purity(body_for_check, lo, hi)
+        if purity < _MIN_SCRIPT_PURITY:
+            flags.append(
+                f"Requested language was '{language}' but only {purity:.0%} of the article's letters are "
+                f"in the expected script — likely mixed-language output from the LLM. Review before publishing."
+            )
+            score -= 20
 
     score = max(0, min(100, score))
     return {"score": score, "flags": flags, "word_count": word_count}

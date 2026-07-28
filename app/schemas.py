@@ -80,13 +80,15 @@ class BatchGenerateRequest(BaseModel):
 
 class ReviewActionRequest(BaseModel):
     note: str = Field("", max_length=500)
+    reviewer_name: str = Field("", max_length=100)
+    reviewer_credential: str = Field("", max_length=100)
 
-    @field_validator("note")
+    @field_validator("note", "reviewer_name", "reviewer_credential")
     @classmethod
-    def v_note(cls, v):
+    def v_clean_text(cls, v):
         v = (v or "").strip()
         if v and _UNSAFE_CHARS.search(v):
-            raise ValueError("note contains disallowed characters (< > { } $ `)")
+            raise ValueError("contains disallowed characters (< > { } $ `)")
         return v
 
 
