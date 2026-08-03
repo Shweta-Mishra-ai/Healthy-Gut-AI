@@ -72,6 +72,7 @@ async def rate_limit_and_logging_middleware(request: Request, call_next):
         logger.exception("Unhandled error on %s: %s", request.url.path, e)
         return JSONResponse(status_code=500, content={"error": "Internal server error"})
     duration_ms = round((time.time() - start) * 1000, 1)
+    response.headers["X-Response-Time"] = f"{duration_ms}ms"
     logger.info("%s %s -> %s (%sms)", request.method, request.url.path, response.status_code, duration_ms)
     return response
 

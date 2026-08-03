@@ -3,22 +3,19 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Healthy Gut AI | Review Queue</title>
+    <title>Healthy Gut AI | Medical Review Queue</title>
     <link rel="stylesheet" href="/static/style.css">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@500;600;700;800&display=swap" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.6/dist/purify.min.js"></script>
     <style>
-        .tabs { display: flex; gap: 0.5rem; margin-bottom: 1rem; }
-        .tab-btn { padding: 0.5rem 1rem; border-radius: 8px; border: 1px solid rgba(255,255,255,0.15); background: rgba(255,255,255,0.05); color: inherit; cursor: pointer; }
-        .tab-btn.active { background: rgba(80,160,255,0.25); border-color: rgba(80,160,255,0.5); }
-        .review-card { background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.12); border-radius: 12px; padding: 1rem; margin-bottom: 1rem; }
-        .review-meta { display: flex; gap: 1rem; flex-wrap: wrap; font-size: 0.85rem; opacity: 0.75; margin: 0.5rem 0; }
-        .review-actions { display: flex; gap: 0.5rem; margin-top: 0.75rem; }
-        .btn-approve { background: rgba(80,220,150,0.25); border: 1px solid rgba(80,220,150,0.5); color: #7ee6b0; }
-        .btn-reject { background: rgba(230,80,80,0.2); border: 1px solid rgba(230,80,80,0.4); color: #ff9d9d; }
-        .btn-small { width: auto; padding: 0.4rem 0.9rem; margin-top: 0; border-radius: 8px; cursor: pointer; font-size: 0.85rem; }
-        .status-pill { padding: 0.15rem 0.5rem; border-radius: 999px; font-size: 0.75rem; }
+        .tabs { display: flex; gap: 0.5rem; margin-bottom: 1.5rem; }
+        .tab-btn { padding: 0.6rem 1.2rem; border-radius: 0.75rem; border: 1px solid var(--card-border); background: var(--input-bg); color: var(--text-muted); cursor: pointer; font-weight: 600; transition: all 0.2s; }
+        .tab-btn.active { background: var(--primary-light); color: var(--primary); border-color: var(--primary); }
+        .review-card { background: var(--input-bg); border: 1px solid var(--card-border); border-radius: 1rem; padding: 1.5rem; margin-bottom: 1rem; box-shadow: var(--shadow-subtle); }
+        .review-meta { display: flex; gap: 1.25rem; flex-wrap: wrap; font-size: 0.88rem; color: var(--text-muted); margin: 0.6rem 0 1rem 0; }
+        .review-actions { display: flex; gap: 0.6rem; flex-wrap: wrap; margin-top: 1rem; }
+        .badge-verified { background: rgba(16,185,129,0.12); color: var(--success); padding: 0.4rem 0.75rem; border-radius: 0.5rem; font-size: 0.85rem; font-weight: 600; display: inline-block; margin-top: 0.5rem; }
     </style>
 </head>
 <body>
@@ -26,143 +23,188 @@
         <div class="globe globe-1"></div>
         <div class="globe globe-2"></div>
     </div>
+
     <main class="container">
         <header>
-            <h1>Review Queue</h1>
-            <p>No article should go live without a human confirming the medical framing is sound.</p>
+            <div class="header-brand">
+                <div class="brand-icon">📋</div>
+                <h1>Medical Review Queue</h1>
+            </div>
+            <p class="subtitle">Human-in-the-loop medical content verification & approval workspace.</p>
+            <div class="nav-links">
+                <a href="/">✨ Generator</a>
+                <a href="/review" class="active">📋 Review Queue</a>
+                <a href="/dashboard">📊 Dashboard</a>
+                <button type="button" class="theme-toggle-btn" id="theme-toggle-btn" title="Toggle Dark/Light Mode">🌙</button>
+            </div>
         </header>
 
         <section class="generator-panel glass">
-            <div id="counts-summary" style="margin-bottom:1rem; opacity:0.8;"></div>
+            <div id="counts-summary" style="margin-bottom:1.5rem; font-weight: 600; color: var(--text-muted);"></div>
             <div class="tabs">
-                <button class="tab-btn active" data-status="draft">Pending Review</button>
-                <button class="tab-btn" data-status="approved">Approved</button>
-                <button class="tab-btn" data-status="rejected">Rejected</button>
+                <button class="tab-btn active" data-status="draft">⏳ Pending Drafts</button>
+                <button class="tab-btn" data-status="approved">✅ Approved</button>
+                <button class="tab-btn" data-status="rejected">❌ Rejected</button>
             </div>
             <div id="queue-list"></div>
         </section>
     </main>
 
+    <div id="toast-container"></div>
+
     <script>
         let currentStatus = 'draft';
+        const theme = localStorage.getItem('theme') || 'light';
+        document.documentElement.setAttribute('data-theme', theme);
+        const themeBtn = document.getElementById('theme-toggle-btn');
+        if (themeBtn) {
+            themeBtn.textContent = theme === 'dark' ? '☀️' : '🌙';
+            themeBtn.addEventListener('click', () => {
+                const next = document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+                document.documentElement.setAttribute('data-theme', next);
+                localStorage.setItem('theme', next);
+                themeBtn.textContent = next === 'dark' ? '☀️' : '🌙';
+            });
+        }
+
+        function showToast(message, type = 'info') {
+            const container = document.getElementById('toast-container');
+            if (!container) return;
+            const toast = document.createElement('div');
+            toast.className = `toast toast-${type}`;
+            toast.innerHTML = `<span>ℹ️</span><div>${message}</div>`;
+            container.appendChild(toast);
+            setTimeout(() => toast.remove(), 3500);
+        }
 
         function safeHTML(markdown) {
-            if (!markdown) return 'No article content generated.';
+            if (!markdown) return 'No content.';
             let raw = '';
             if (window.marked && typeof window.marked.parse === 'function') {
                 raw = window.marked.parse(markdown);
             } else {
-                raw = markdown
-                    .replace(/^# (.*$)/gim, '<h1>$1</h1>')
-                    .replace(/^## (.*$)/gim, '<h2>$1</h2>')
-                    .replace(/^### (.*$)/gim, '<h3>$1</h3>')
-                    .replace(/\*\*(.*?)\*\*/gim, '<strong>$1</strong>')
-                    .replace(/\*(.*?)\*/gim, '<em>$1</em>')
-                    .replace(/\n\n/gim, '<br><br>');
+                raw = markdown.replace(/^# (.*$)/gim, '<h1>$1</h1>').replace(/\n\n/gim, '<br><br>');
             }
             return window.DOMPurify ? DOMPurify.sanitize(raw) : raw;
         }
 
         async function loadCounts() {
-            const res = await fetch('/review/counts');
-            const c = await res.json();
-            document.getElementById('counts-summary').textContent =
-                `Total: ${c.total} · Pending: ${c.draft} · Approved: ${c.approved} · Rejected: ${c.rejected}`;
+            try {
+                const res = await fetch('/review/counts');
+                const c = await res.json();
+                document.getElementById('counts-summary').textContent =
+                    `Total: ${c.total} | Pending: ${c.draft} | Approved: ${c.approved} | Rejected: ${c.rejected}`;
+            } catch (err) { console.error(err); }
         }
 
         async function loadQueue(status) {
             currentStatus = status;
             document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.status === status));
             const listEl = document.getElementById('queue-list');
-            listEl.innerHTML = '<p style="opacity:.6;">Loading...</p>';
+            listEl.innerHTML = '<p style="color:var(--text-muted);">Loading review items...</p>';
 
-            const res = await fetch(`/review/queue?status=${status}`);
-            const data = await res.json();
+            try {
+                const res = await fetch(`/review/queue?status=${status}`);
+                const data = await res.json();
 
-            if (!data.items.length) {
-                listEl.innerHTML = `<p style="opacity:.6;">No ${status} articles.</p>`;
-                return;
+                if (!data.items.length) {
+                    listEl.innerHTML = `<p style="color:var(--text-muted); padding:2rem 0; text-align:center;">No ${status} articles found in review queue.</p>`;
+                    return;
+                }
+
+                listEl.innerHTML = data.items.map(item => `
+                    <div class="review-card">
+                        <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:0.5rem;">
+                            <h3 style="font-family:'Outfit',sans-serif;">${item.topic}</h3>
+                            <span class="status-pill pill-${item.status === 'approved' ? 'ok' : item.status === 'rejected' ? 'fail' : 'draft'}">${item.status}</span>
+                        </div>
+                        <div class="review-meta">
+                            <span>🔑 Keyword: <strong>${item.primary_keyword}</strong></span>
+                            <span>⚡ Provider: <strong>${item.provider_used || '—'}</strong></span>
+                            <span>⭐ Quality Score: <strong>${item.quality_score ?? '—'}</strong></span>
+                            <span>📝 Words: <strong>${item.word_count ?? '—'}</strong></span>
+                        </div>
+                        ${item.reviewer_badge ? `<div class="badge-verified">✅ ${item.reviewer_badge}</div>` : ''}
+                        ${item.reviewer_note ? `<p style="font-size:0.85rem; color:var(--text-muted); margin-top:0.4rem;">Note: ${item.reviewer_note}</p>` : ''}
+                        <div class="review-actions">
+                            <button class="btn-secondary" onclick="viewArticle('${item.id}')">📖 Read Full Draft</button>
+                            ${status === 'draft' ? `
+                                <button class="btn-action approve" onclick="reviewAction('${item.id}', 'approve')">✅ Approve & Add Badge</button>
+                                <button class="btn-action reject" onclick="reviewAction('${item.id}', 'reject')">❌ Reject</button>
+                            ` : ''}
+                            ${status === 'approved' ? `
+                                <button class="btn-secondary" onclick="publishToWordPress('${item.id}', true)">👁 Test WP Dry-Run</button>
+                                <button class="btn-primary" style="width:auto; padding:0.4rem 0.8rem;" onclick="publishToWordPress('${item.id}', false)">📤 Publish to WordPress</button>
+                            ` : ''}
+                        </div>
+                        <div id="wp-result-${item.id}" class="hidden" style="margin-top:0.75rem; font-size:0.88rem;"></div>
+                        <div id="article-body-${item.id}" class="hidden article-content" style="margin-top:1rem;"></div>
+                    </div>
+                `).join('');
+            } catch (err) {
+                listEl.innerHTML = `<p style="color:var(--danger);">Failed to load review items: ${err.message}</p>`;
             }
-
-            listEl.innerHTML = data.items.map(item => `
-                <div class="review-card">
-                    <strong>${item.topic}</strong>
-                    <div class="review-meta">
-                        <span>Keyword: ${item.primary_keyword}</span>
-                        <span>Provider: ${item.provider_used || '—'}</span>
-                        <span>Quality: ${item.quality_score ?? '—'}</span>
-                        <span>Words: ${item.word_count ?? '—'}</span>
-                        <span class="status-pill">${item.status}</span>
-                    </div>
-                    ${item.reviewer_badge ? `<p style="color:#7ee6b0;font-size:0.85rem;">✅ ${item.reviewer_badge}</p>` : ''}
-                    ${item.reviewer_note ? `<p style="opacity:.7;font-size:0.85rem;">Note: ${item.reviewer_note}</p>` : ''}
-                    <div class="review-actions">
-                        <button class="btn-small" onclick="viewArticle('${item.id}')">View Full Article</button>
-                        ${status === 'draft' ? `
-                            <button class="btn-small btn-approve" onclick="reviewAction('${item.id}', 'approve')">✅ Approve</button>
-                            <button class="btn-small btn-reject" onclick="reviewAction('${item.id}', 'reject')">❌ Reject</button>
-                        ` : ''}
-                        ${status === 'approved' ? `
-                            <button class="btn-small" onclick="publishToWordPress('${item.id}', true)">👁 Preview WP Publish (dry-run)</button>
-                            <button class="btn-small btn-approve" onclick="publishToWordPress('${item.id}', false)">📤 Publish to WordPress</button>
-                        ` : ''}
-                    </div>
-                    <div id="wp-result-${item.id}" class="hidden" style="margin-top:0.5rem; font-size:0.85rem;"></div>
-                    <div id="article-body-${item.id}" class="hidden article-content" style="margin-top:0.75rem;"></div>
-                </div>
-            `).join('');
         }
 
         async function viewArticle(id) {
             const el = document.getElementById(`article-body-${id}`);
             if (!el.classList.contains('hidden')) { el.classList.add('hidden'); return; }
             const res = await fetch(`/review/${id}`);
-            if (!res.ok) { el.innerHTML = '<p style="color:#ffb3b3;">Failed to load article.</p>'; el.classList.remove('hidden'); return; }
+            if (!res.ok) { el.innerHTML = '<p style="color:var(--danger);">Failed to load article draft.</p>'; el.classList.remove('hidden'); return; }
             const data = await res.json();
             el.innerHTML = safeHTML(data.article.optimized_article_markdown);
             el.classList.remove('hidden');
         }
 
         async function reviewAction(id, action) {
-            const note = prompt(`Optional note for this ${action}:`) || '';
+            const note = prompt(`Optional reviewer note for ${action}:`) || '';
             let reviewer_name = '';
             let reviewer_credential = '';
             if (action === 'approve') {
-                reviewer_name = prompt('Reviewer name (optional, e.g. "Dr. Priya Sharma"):') || '';
+                reviewer_name = prompt('Reviewer Name (e.g. "Dr. Ananya Roy"):') || '';
                 if (reviewer_name) {
-                    reviewer_credential = prompt('Credential (optional, e.g. "MBBS, Registered Medical Practitioner"):') || '';
+                    reviewer_credential = prompt('Credential (e.g. "MD, Gastroenterologist"):') || '';
                 }
             }
-            const res = await fetch(`/review/${id}/${action}`, {
-                method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ note, reviewer_name, reviewer_credential })
-            });
-            if (!res.ok) {
-                const err = await res.json();
-                alert(`Action failed: ${err.error || 'unknown error'}`);
-                return;
-            }
-            await loadCounts();
-            await loadQueue(currentStatus);
+            try {
+                const res = await fetch(`/review/${id}/${action}`, {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ note, reviewer_name, reviewer_credential })
+                });
+                if (!res.ok) {
+                    const err = await res.json();
+                    showToast(`Action failed: ${err.error || 'unknown error'}`, 'error');
+                    return;
+                }
+                showToast(`Article status updated to ${action}`, 'success');
+                await loadCounts();
+                await loadQueue(currentStatus);
+            } catch (err) { showToast(`Review action failed: ${err.message}`, 'error'); }
         }
 
         async function publishToWordPress(id, dryRun) {
             const resultEl = document.getElementById(`wp-result-${id}`);
             resultEl.classList.remove('hidden');
-            resultEl.innerHTML = '<p style="opacity:.7;">Working...</p>';
+            resultEl.innerHTML = '<p style="color:var(--text-muted);">Connecting to WordPress REST API...</p>';
 
-            const res = await fetch(`/publish/wordpress/${id}?status=draft&dry_run=${dryRun}`, { method: 'POST' });
-            const data = await res.json();
+            try {
+                const res = await fetch(`/publish/wordpress/${id}?status=draft&dry_run=${dryRun}`, { method: 'POST' });
+                const data = await res.json();
 
-            if (!res.ok) {
-                resultEl.innerHTML = `<p style="color:#ffb3b3;">❌ ${data.error || 'Publish failed.'}</p>`;
-                return;
-            }
+                if (!res.ok) {
+                    resultEl.innerHTML = `<p style="color:var(--danger);">❌ ${data.error || 'Publish failed.'}</p>`;
+                    return;
+                }
 
-            if (dryRun) {
-                resultEl.innerHTML = `<p style="color:#7ee6b0;">✅ Dry run OK — would send: <strong>${data.would_send.title}</strong> (status: ${data.would_send.status})</p>`;
-            } else {
-                resultEl.innerHTML = `<p style="color:#7ee6b0;">✅ Published! <a href="${data.post_url}" target="_blank" style="color:#7ee6b0;">View post</a> (WP status: ${data.status})</p>`;
+                if (dryRun) {
+                    resultEl.innerHTML = `<p style="color:var(--success);">✅ Dry run OK — simulated draft post: <strong>"${data.would_send.title}"</strong></p>`;
+                    showToast('WordPress dry run verified', 'success');
+                } else {
+                    resultEl.innerHTML = `<p style="color:var(--success);">✅ Published! <a href="${data.post_url}" target="_blank" style="color:var(--primary); font-weight:600;">View WordPress Draft Post</a></p>`;
+                    showToast('Published to WordPress', 'success');
+                }
+            } catch (err) {
+                resultEl.innerHTML = `<p style="color:var(--danger);">❌ Connection error: ${err.message}</p>`;
             }
         }
 

@@ -20,6 +20,10 @@ class RateLimiter:
     def allow(self, key: str) -> tuple[bool, int]:
         now = time.time()
         with self._lock:
+            # Periodic cleanup of completely stale keys every 100 requests to prevent memory leaks
+            if len(self._hits) > 500:
+                self._cleanup_locked(now)
+
             hits = self._hits[key]
             cutoff = now - self._window
             while hits and hits[0] < cutoff:
@@ -29,6 +33,22 @@ class RateLimiter:
                 return False, retry_after
             hits.append(now)
             return True, 0
+
+    def _cleanup_locked(self, now: float) -> None:
+        cutoff = now - self._window
+        stale_keys = [
+            k for k, hits in self._hits.items()
+            if not hits or hits[-1] < cutoff
+        ]
+        for k in stale_keys:
+            del self._hits[k]
+
+    def cleanup_stale(self) -> int:
+        now = time.time()
+        with self._lock:
+            before = len(self._hits)
+            self._cleanup_locked(now)
+            return before - len(self._hits)
 
 
 rate_limiter = RateLimiter(settings.RATE_LIMIT_PER_MINUTE)
