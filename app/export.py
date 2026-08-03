@@ -34,17 +34,29 @@ def markdown_to_docx_bytes(title: str, markdown_text: str) -> bytes:
     return buf.getvalue()
 
 
+def _clean_pdf_text(text: str) -> str:
+    """Sanitizes unicode text for FPDF font rendering, converting common extended
+    unicode characters (curly quotes, dashes, bullets) to clean latin-1 equivalents."""
+    if not text:
+        return ""
+    replacements = {
+        "“": '"', "”": '"', "‘": "'", "’": "'", "–": "-", "—": "-",
+        "…": "...", "•": "-", "™": "(TM)", "®": "(R)", "©": "(C)",
+    }
+    for k, v in replacements.items():
+        text = text.replace(k, v)
+    return text.encode("latin-1", "ignore").decode("latin-1")
+
+
 def markdown_to_pdf_bytes(title: str, markdown_text: str) -> bytes:
     from fpdf import FPDF
-
     from fpdf.enums import XPos, YPos
 
     pdf = FPDF()
     pdf.set_auto_page_break(auto=True, margin=15)
     pdf.add_page()
     pdf.set_font("Helvetica", "B", 16)
-    pdf.multi_cell(0, 10, (title or "Article").encode("latin-1", "replace").decode("latin-1"),
-                   new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+    pdf.multi_cell(0, 10, _clean_pdf_text(title or "Article"), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
     pdf.ln(2)
     pdf.set_font("Helvetica", size=11)
 
@@ -56,8 +68,9 @@ def markdown_to_pdf_bytes(title: str, markdown_text: str) -> bytes:
         clean = re.sub(r"[#*_`|]", "", stripped).strip()
         if not clean:
             continue
-        safe = clean.encode("latin-1", "replace").decode("latin-1")
-        pdf.multi_cell(0, 7, safe, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        safe = _clean_pdf_text(clean)
+        if safe.strip():
+            pdf.multi_cell(0, 7, safe, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
 
     out = pdf.output()
     if isinstance(out, str):

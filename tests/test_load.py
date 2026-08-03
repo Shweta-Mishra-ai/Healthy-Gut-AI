@@ -118,3 +118,16 @@ def test_concurrent_generations_do_not_corrupt_db():
 
     rate_limiter._hits.clear()
     rate_limiter._limit = 10
+
+
+def test_rate_limiter_stale_cleanup():
+    """Simulates 600 unique client IPs to verify stale keys are automatically
+    cleaned up and do not leak memory over time."""
+    rate_limiter._hits.clear()
+    for i in range(600):
+        rate_limiter._hits[f"client_{i}"] = [1.0]  # Very old timestamps
+
+    # Next call triggers cleanup_locked because len(_hits) > 500
+    rate_limiter.allow("fresh_client")
+    assert len(rate_limiter._hits) <= 2  # Old keys purged, fresh client added
+    rate_limiter._hits.clear()

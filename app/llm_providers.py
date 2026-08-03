@@ -140,16 +140,80 @@ TONE_INSTRUCTIONS = {
 def _build_prompts(topic, keyword, geo, article_type, language, tone="educational"):
     ctx = rag_context(topic, keyword)
     if language == "hi":
-        lang_instr = (
-            "Write the ENTIRE article in Hindi (Devanagari script) — every sentence, every heading, "
-            "every FAQ answer, the meta description, and CTAs must all be in Hindi. The VERIFIED MEDICAL "
-            "CONTEXT below is provided in English for accuracy — translate its facts into Hindi as you "
-            "use them; do NOT copy any English sentence verbatim into the article. Medical proper nouns "
-            "(e.g. drug or condition names without a common Hindi equivalent) may stay in English, but "
-            "surrounding explanatory text must not."
+        tone_hi = {
+            "educational": "स्पष्ट, शिक्षाप्रद और ज्ञानवर्धक शैली में लिखें।",
+            "authoritative": "चिकित्सकीय रूप से प्रामाणिक, गंभीर और सटीक शैली में लिखें।",
+            "patient_friendly": "सहानुभूतिपूर्ण, सरल, सुलभ और आत्मीय शैली में लिखें।",
+            "academic": "औपचारिक, शोध-आधारित और गंभीर शैक्षणिक शैली में लिखें।",
+            "seo_blog": "आकर्षक, रोचक और एसईओ-अनुकूलित ब्लॉग शैली में लिखें।",
+        }.get(tone, "स्पष्ट और शिक्षाप्रद शैली में लिखें।")
+
+        word_count = "2500-3000" if article_type == "pillar" else "1000-1500"
+        section_budget = (
+            "- ओवरव्यू (Overview): ~350-450 शब्द\n"
+            "- कारण और ट्रिगर (Causes & Triggers): ~400-500 शब्द\n"
+            "- लक्षण (Symptoms): ~400-500 शब्द\n"
+            "- आहार और प्रबंधन (Diet & Management): ~600-700 शब्द (तुलना सारणी सहित)\n"
+            "- डॉक्टर से कब परामर्श करें (When to Consult a Doctor): ~250-350 शब्द\n"
+            "- अक्सर पूछे जाने वाले प्रश्न (FAQs): ~200-300 शब्द"
+            if article_type == "pillar" else
+            "- ओवरव्यू (Overview): ~150-200 शब्द\n"
+            "- कारण और ट्रिगर (Causes & Triggers): ~200-250 शब्द\n"
+            "- लक्षण (Symptoms): ~200-250 शब्द\n"
+            "- आहार और प्रबंधन (Diet & Management): ~300-400 शब्द (तुलना सारणी सहित)\n"
+            "- डॉक्टर से कब परामर्श करें (When to Consult a Doctor): ~150-200 शब्द"
         )
-    else:
-        lang_instr = "Write the article in English."
+
+        prompt1 = f"""आप Healthy Gut AI के एक वरिष्ठ चिकित्सा सामग्री लेखक (Medical Content Writer) हैं।
+आपको स्वास्थ्य और पाचन तंत्र (Gut Health) विषय पर एक संपूर्ण, सटीक और SEO-अनुकूलित {article_type} लेख लिखना है।
+
+विषय (Topic): {topic}
+मुख्य कीवर्ड (Primary Keyword): {keyword}
+लक्षित स्थान (Geo-Target): {geo}
+
+सत्यापित चिकित्सा संदर्भ (VERIFIED MEDICAL CONTEXT):
+{ctx}
+
+कड़े नियम (STRICT RULES):
+- सम्पूर्ण लेख केवल और केवल शुद्ध हिंदी (देवनागरी लिपि) में लिखें। सभी पैराग्राफ, मुख्य शीर्षक (H2, H3), टेबल, अस्वीकरण और एफएक्यू देवनागरी हिंदी में होने चाहिए। केवल मुख्य विषय/टाइटल नाम अंग्रेजी में रह सकता है।
+- सत्यापित चिकित्सा संदर्भ से बाहर किसी काल्पनिक आंकड़े या प्रतिशत का उल्लेख न करें।
+- किसी भी आहार या उपचार के लिए "पूर्ण इलाज" का दावा न करें। हमेशा "प्रबंधन में मददगार", "राहत दे सकता है" जैसी संतुलित भाषा का उपयोग करें।
+- लेख के अंत में स्पष्ट चिकित्सा अस्वीकरण (Medical Disclaimer) शामिल करें।
+- टोन और शैली: {tone_hi}
+
+आवश्यक लंबाई: कुल {word_count} शब्द।
+संरचना और अनुभाग (Section Budget):
+{section_budget}
+
+आउटपुट: केवल मार्कडाउन स्वरूप (Markdown format) में हिंदी लेख दें।"""
+
+        prompt2 = f"""नीचे दिए गए हिंदी लेख को SEO और स्थान "{geo}" के लिए अनुकूलित (Optimize) करें।
+कीवर्ड: {keyword}
+
+नियम: लेख के सभी मूल तथ्यों और संपूर्ण लंबाई को सुरक्षित रखें। किसी भी अनुभाग को छोटा या हटाएँ नहीं।
+
+meta_description_variants के लिए ठीक 3 अलग-अलग हिंदी मेटा विवरण (120-160 वर्ण) लिखें:
+1. लाभ-केंद्रित (Benefit-led)
+2. प्रश्न-केंद्रित (Question-led)
+3. Direct/keyword-led
+
+केवल निम्नलिखित मान्य JSON ऑब्जेक्ट लौटाएँ (कोई मार्कडाउन कोड ब्लॉक नहीं):
+{{
+  "optimized_article_markdown": "हिंदी लेख का संपूर्ण मार्कडाउन",
+  "meta_description": "मेटा विवरण 1",
+  "meta_description_variants": ["विवरण 1", "विवरण 2", "विवरण 3"],
+  "url_slug": "url-slug",
+  "faqs": [{{"question": "प्रश्न हिंदी में?", "answer": "उत्तर हिंदी में।"}}],
+  "schema_json_ld": {{"@context": "https://schema.org", "@type": "Article", "headline": "{topic}"}},
+  "cta_soft": "सॉफ्ट आह्वान हिंदी में",
+  "cta_direct": "प्रत्यक्ष आह्वान हिंदी में"
+}}
+
+लेख:
+{{DRAFT}}"""
+        return prompt1, prompt2
+
+    lang_instr = "Write the article in English."
     tone_instr = TONE_INSTRUCTIONS.get(tone, TONE_INSTRUCTIONS["educational"])
 
     if article_type == "pillar":
@@ -200,17 +264,10 @@ Include: H1 with keyword, a comparison table (foods to eat vs. avoid, or similar
 section, and the medical disclaimer at the end.
 Output: Markdown only, no commentary before or after."""
 
-    lang_reinforce = (
-        "\nIMPORTANT: This article is in Hindi. Keep optimized_article_markdown, meta_description, "
-        "meta_description_variants, faqs, cta_soft, and cta_direct ALL in Hindi — do not translate "
-        "anything back into English or mix languages within a single field."
-        if language == "hi" else ""
-    )
     prompt2 = f"""Optimize the following article for SEO and geo-target "{geo}".
 Keyword: {keyword}
 Preserve all factual content AND the full length of the article body — do not shorten, summarize, or drop
 sections while optimizing; only add SEO metadata around it.
-{lang_reinforce}
 
 For meta_description_variants, write exactly 3 alternative meta descriptions, each 120-160 characters,
 each including the keyword, but with genuinely different angles:

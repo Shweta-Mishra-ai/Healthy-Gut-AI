@@ -24,12 +24,12 @@ Some description text.
 
 def test_markdown_to_pdf_conversion():
     markdown_text = """# Topic Header
-Some description.
+Some description with smart quotes “test” and dash — bullet •.
 
 ## Section
 - Bullet point 1
 """
-    pdf_bytes = markdown_to_pdf_bytes("My Document", markdown_text)
+    pdf_bytes = markdown_to_pdf_bytes("My Document — Title", markdown_text)
     assert isinstance(pdf_bytes, bytes)
     assert len(pdf_bytes) > 0
 

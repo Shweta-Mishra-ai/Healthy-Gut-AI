@@ -3,9 +3,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Healthy Gut AI | SEO Article Generator</title>
+    <title>Healthy Gut AI | SEO Article & Clinical Content Generator</title>
+    <meta name="description" content="Generate medically accurate, grounded, and SEO-optimized gut health articles with automated human review workflows and WordPress publishing.">
     <link rel="stylesheet" href="/static/style.css">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@500;600;700;800&display=swap" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.6/dist/purify.min.js"></script>
 </head>
@@ -17,29 +18,37 @@
 
     <main class="container">
         <header>
-            <h1>Healthy Gut AI</h1>
-            <p>Generate precise, medically accurate, and SEO-optimized gut health articles.</p>
-            <p><a href="/dashboard" style="opacity:0.7;font-size:0.85rem;">📊 View Dashboard</a> · <a href="/review" style="opacity:0.7;font-size:0.85rem;">✅ Review Queue</a></p>
+            <div class="header-brand">
+                <div class="brand-icon">🌱</div>
+                <h1>Healthy Gut AI</h1>
+            </div>
+            <p class="subtitle">Generate precise, medically grounded, and SEO-optimized gut health content at scale.</p>
+            <div class="nav-links">
+                <a href="/" class="active">✨ Generator</a>
+                <a href="/review">📋 Review Queue</a>
+                <a href="/dashboard">📊 Dashboard</a>
+                <button type="button" class="theme-toggle-btn" id="theme-toggle-btn" title="Toggle Dark/Light Mode">🌙</button>
+            </div>
         </header>
 
         <section class="generator-panel glass">
             <div class="mode-toggle">
                 <button type="button" class="mode-btn active" data-mode="single">Single Article</button>
-                <button type="button" class="mode-btn" data-mode="batch">Batch (multiple topics)</button>
+                <button type="button" class="mode-btn" data-mode="batch">Batch Generator</button>
             </div>
 
             <form id="generate-form">
                 <div id="single-fields">
                     <div class="form-group">
                         <label for="topic">Article Topic</label>
-                        <input type="text" id="topic" name="topic" placeholder="e.g. Irritable Bowel Syndrome" required maxlength="200">
+                        <input type="text" id="topic" name="topic" placeholder="e.g. Irritable Bowel Syndrome Management" required maxlength="200">
                     </div>
                     <div class="form-group">
                         <label for="primary_keyword">Primary Keyword</label>
-                        <input type="text" id="primary_keyword" name="primary_keyword" placeholder="e.g. IBS symptoms" required maxlength="100">
+                        <input type="text" id="primary_keyword" name="primary_keyword" placeholder="e.g. IBS diet tips" required maxlength="100">
                     </div>
                     <div class="form-group">
-                        <label for="geo_target">Geo-Target</label>
+                        <label for="geo_target">Geo-Target Location</label>
                         <input type="text" id="geo_target" name="geo_target" placeholder="e.g. New York, USA" required maxlength="100">
                     </div>
                 </div>
@@ -47,8 +56,7 @@
                 <div id="batch-fields" class="hidden">
                     <div class="form-group">
                         <label for="batch_topics">Topics (one per line, format: topic | keyword | geo)</label>
-                        <textarea id="batch_topics" rows="5" placeholder="IBS diet | IBS symptoms | USA
-GERD relief | acid reflux remedies | UK"></textarea>
+                        <textarea id="batch_topics" rows="5" placeholder="IBS diet guide | IBS diet tips | USA&#10;GERD natural remedies | acid reflux relief | UK&#10;Probiotics for bloating | probiotic benefits | Canada"></textarea>
                     </div>
                 </div>
 
@@ -56,45 +64,51 @@ GERD relief | acid reflux remedies | UK"></textarea>
                     <div class="col">
                         <label for="article_type">Article Type</label>
                         <select id="article_type" name="article_type">
-                            <option value="pillar">Pillar (2500+ words)</option>
-                            <option value="supporting" selected>Supporting (1000+ words)</option>
+                            <option value="pillar">Pillar Guide (2500+ words)</option>
+                            <option value="supporting" selected>Supporting Article (1000+ words)</option>
                         </select>
                     </div>
                     <div class="col">
                         <label for="language">Language</label>
                         <select id="language" name="language">
                             <option value="en" selected>English</option>
-                            <option value="hi">Hindi</option>
+                            <option value="hi">Hindi (हिंदी)</option>
                         </select>
                     </div>
                     <div class="col">
-                        <label for="tone">Tone</label>
+                        <label for="tone">Tone of Voice</label>
                         <select id="tone" name="tone">
                             <option value="educational" selected>Educational</option>
-                            <option value="authoritative">Authoritative/Clinical</option>
+                            <option value="authoritative">Authoritative / Clinical</option>
                             <option value="patient_friendly">Patient-Friendly</option>
-                            <option value="academic">Academic</option>
+                            <option value="academic">Academic / Formal</option>
                             <option value="seo_blog">SEO Blog</option>
                         </select>
                     </div>
                 </div>
 
-                <button type="button" id="preview-outline-btn" class="btn-primary" style="background:transparent;border:1px solid rgba(255,255,255,0.25);">👁 Preview Outline (free, no generation)</button>
-                <div id="outline-preview" class="hidden"></div>
-
-                <button type="submit" id="generate-btn" class="btn-primary">Generate Article</button>
+                <div style="margin-top: 1rem; display: flex; gap: 0.75rem;">
+                    <button type="button" id="preview-outline-btn" class="btn-secondary" style="flex: 1;">👁 Preview Outline & Sources</button>
+                    <button type="submit" id="generate-btn" class="btn-primary" style="flex: 2;">⚡ Generate Content</button>
+                </div>
+                
+                <div id="outline-preview" class="hidden" style="margin-top: 1rem;"></div>
             </form>
+
             <div id="loading" class="hidden">
                 <div class="spinner"></div>
-                <p>Consulting knowledge base and synthesizing...</p>
+                <p style="font-weight: 600;">Synthesizing medical knowledge base & optimizing SEO...</p>
+                <p style="font-size: 0.85rem; color: var(--text-muted); margin-top: 0.4rem;">Ensuring strict clinical accuracy, medical disclaimers, and grounded references.</p>
             </div>
             <div id="form-error" class="hidden"></div>
         </section>
 
         <section id="results" class="results-panel glass hidden">
-            <!-- Content will be injected here -->
+            <!-- Results populated dynamically by app.js -->
         </section>
     </main>
+
+    <div id="toast-container"></div>
     <script src="/static/app.js"></script>
 </body>
 </html>

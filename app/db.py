@@ -22,6 +22,8 @@ from app.config import settings
 _lock = threading.Lock()
 _conn = sqlite3.connect(settings.DATABASE_PATH, check_same_thread=False)
 _conn.execute("PRAGMA journal_mode=WAL")
+_conn.execute("PRAGMA busy_timeout=10000")
+_conn.execute("PRAGMA synchronous=NORMAL")
 _conn.row_factory = sqlite3.Row
 
 

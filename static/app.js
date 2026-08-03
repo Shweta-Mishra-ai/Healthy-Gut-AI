@@ -1,5 +1,36 @@
-const state = { mode: 'single', lastRequests: [] };
+const state = { mode: 'single', lastRequests: [], theme: localStorage.getItem('theme') || 'light' };
 
+// Initialize Theme
+document.documentElement.setAttribute('data-theme', state.theme);
+const themeBtn = document.getElementById('theme-toggle-btn');
+if (themeBtn) {
+    themeBtn.textContent = state.theme === 'dark' ? '☀️' : '🌙';
+    themeBtn.addEventListener('click', () => {
+        state.theme = state.theme === 'dark' ? 'light' : 'dark';
+        document.documentElement.setAttribute('data-theme', state.theme);
+        localStorage.setItem('theme', state.theme);
+        themeBtn.textContent = state.theme === 'dark' ? '☀️' : '🌙';
+        showToast(`Switched to ${state.theme} mode`, 'info');
+    });
+}
+
+// Toast Notification System
+function showToast(message, type = 'info') {
+    const container = document.getElementById('toast-container');
+    if (!container) return;
+    const toast = document.createElement('div');
+    toast.className = `toast toast-${type}`;
+    const icons = { success: '✅', error: '❌', warning: '⚠️', info: 'ℹ️' };
+    toast.innerHTML = `<span>${icons[type] || 'ℹ️'}</span><div>${message}</div>`;
+    container.appendChild(toast);
+    setTimeout(() => {
+        toast.style.opacity = '0';
+        toast.style.transform = 'translateY(10px)';
+        setTimeout(() => toast.remove(), 300);
+    }, 4000);
+}
+
+// Mode Toggle Button Listeners
 document.querySelectorAll('.mode-btn').forEach(btn => {
     btn.addEventListener('click', () => {
         document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
@@ -12,13 +43,19 @@ document.querySelectorAll('.mode-btn').forEach(btn => {
 
 function showError(msg) {
     const el = document.getElementById('form-error');
-    el.textContent = msg;
-    el.classList.remove('hidden');
+    if (el) {
+        el.textContent = msg;
+        el.classList.remove('hidden');
+    }
+    showToast(msg, 'error');
 }
+
 function clearError() {
     const el = document.getElementById('form-error');
-    el.textContent = '';
-    el.classList.add('hidden');
+    if (el) {
+        el.textContent = '';
+        el.classList.add('hidden');
+    }
 }
 
 function parseBatchInput(raw) {
@@ -32,7 +69,6 @@ document.getElementById('generate-form').addEventListener('submit', async (e) =>
     e.preventDefault();
     clearError();
 
-    const formPanel = document.querySelector('.generator-panel');
     const loading = document.getElementById('loading');
     const resultsPanel = document.getElementById('results');
     const btn = document.getElementById('generate-btn');
@@ -62,6 +98,7 @@ document.getElementById('generate-form').addEventListener('submit', async (e) =>
                 showError(formatError(res.status, data));
             } else {
                 renderSingleResult(data);
+                showToast('Article generated successfully!', 'success');
             }
         } else {
             const rawItems = parseBatchInput(document.getElementById('batch_topics').value)
@@ -80,11 +117,12 @@ document.getElementById('generate-form').addEventListener('submit', async (e) =>
                 showError(formatError(res.status, data));
             } else {
                 renderBatchResults(data);
+                showToast(`Batch processing completed (${data.succeeded}/${data.total} succeeded)`, 'success');
             }
         }
     } catch (err) {
         console.error(err);
-        showError('Failed to connect to backend. Check your connection and try again.');
+        showError('Failed to connect to backend server. Please verify your connection.');
     } finally {
         btn.disabled = false;
         loading.classList.add('hidden');
@@ -93,23 +131,23 @@ document.getElementById('generate-form').addEventListener('submit', async (e) =>
 
 function formatError(status, data) {
     if (status === 429) {
-        return `Too many requests — please wait ${data.retry_after_seconds || 'a moment'} seconds and try again.`;
+        return `Too many requests — please wait ${data.retry_after_seconds || 'a moment'} seconds.`;
     }
     if (status === 422 && data.out_of_scope) {
         return data.error;
     }
     if (status === 422) {
         const details = (data.details || []).map(d => d.msg).join('; ');
-        return 'Please fix your input: ' + (details || data.error || 'invalid data.');
+        return 'Validation failed: ' + (details || data.error || 'invalid input.');
     }
     if (status === 502) {
-        return 'The AI provider had trouble generating this article. Please try again.';
+        return 'The AI provider had trouble generating content. Served fallback result.';
     }
-    return data.error || 'Something went wrong on the server.';
+    return data.error || 'An unexpected server error occurred.';
 }
 
 function safeHTML(markdown) {
-    if (!markdown) return 'No article content generated.';
+    if (!markdown) return '<p style="color:var(--text-muted);">No article content generated.</p>';
     let raw = '';
     if (window.marked && typeof window.marked.parse === 'function') {
         raw = window.marked.parse(markdown);
@@ -127,18 +165,18 @@ function safeHTML(markdown) {
 
 function internalLinksBlock(suggestions) {
     if (!suggestions || !suggestions.length) {
-        return `<div class="seo-meta"><p style="opacity:.6;font-size:0.85rem;">No internal linking suggestions yet — approve a few related articles first (Review Queue) to start building an SEO cluster.</p></div>`;
+        return `<div class="seo-meta"><p style="opacity:.7;font-size:0.88rem;">🔗 <strong>Suggested Internal Links:</strong> Approve related articles in the Review Queue to automatically construct your SEO internal cluster.</p></div>`;
     }
     const items = suggestions.map(s => `
-        <li>
-            <strong>${s.topic}</strong> <span style="opacity:.6;">(relevance ${s.relevance_score})</span>
+        <li style="margin-bottom:0.4rem;">
+            <strong>${s.topic}</strong> <span style="opacity:.65;">(relevance ${s.relevance_score})</span>
             <br><small style="opacity:.6;">/${s.url_slug || ''}</small>
         </li>
     `).join('');
     return `
         <div class="seo-meta">
-            <p><strong>🔗 Suggested Internal Links (from approved articles):</strong></p>
-            <ul>${items}</ul>
+            <p><strong>🔗 Suggested Internal Links (from approved cluster):</strong></p>
+            <ul style="padding-left:1.2rem; margin-top:0.4rem;">${items}</ul>
         </div>
     `;
 }
@@ -160,33 +198,36 @@ function renderSingleResult(data) {
     const providerBadge = data.cached ? 'Cached' : (data.provider_used || 'mock');
     state.lastSingleMarkdown = data.optimized_article_markdown || '';
     resultsPanel.innerHTML = `
-        <div class="results-header">
-            <h2>Generated Output <small style="opacity:.6;font-size:0.7em;">(${providerBadge})</small></h2>
+        <div class="results-header" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:1rem; margin-bottom:1.5rem;">
+            <div>
+                <h2>Generated Article <span class="status-pill pill-ok">${providerBadge}</span></h2>
+                <p style="font-size:0.85rem; color:var(--text-muted);">Registered in Review Queue (ID: ${data.review_id || 'draft'})</p>
+            </div>
             <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
-                <button class="btn-primary" style="width:auto;padding:.5rem 1rem;margin-top:0;" onclick="window.print()">Print / PDF</button>
-                <button class="btn-primary" style="width:auto;padding:.5rem 1rem;margin-top:0;" id="export-docx-btn">Download DOCX</button>
-                <button class="btn-primary" style="width:auto;padding:.5rem 1rem;margin-top:0;" id="export-pdf-btn">Download PDF</button>
-                <button class="btn-primary" style="width:auto;padding:.5rem 1rem;margin-top:0;" id="export-md-btn">Download .md</button>
-                <button class="btn-primary" style="width:auto;padding:.5rem 1rem;margin-top:0;" id="export-json-btn">Download .json</button>
-                <button class="btn-primary" style="width:auto;padding:.5rem 1rem;margin-top:0;" id="copy-article-btn">📋 Copy</button>
+                <button class="btn-secondary" onclick="window.print()">🖨 Print / PDF</button>
+                <button class="btn-secondary" id="export-docx-btn">📄 DOCX</button>
+                <button class="btn-secondary" id="export-pdf-btn">📕 PDF</button>
+                <button class="btn-secondary" id="export-md-btn">📝 .MD</button>
+                <button class="btn-secondary" id="export-json-btn">📦 JSON</button>
+                <button class="btn-primary" style="width:auto; padding:0.5rem 1rem;" id="copy-article-btn">📋 Copy Article</button>
             </div>
         </div>
         ${metricsBlock(data)}
         <div class="article-content">${safeHTML(data.optimized_article_markdown)}</div>
         <div class="seo-meta">
-            <p><strong>Meta Description Variants (A/B):</strong></p>
+            <p><strong>Meta Description A/B Variants:</strong></p>
             <ul class="meta-variants-list">
                 ${(data.meta_description_variants || [data.meta_description || '']).map((v, i) => `
                     <li>
                         <span>${v}</span>
-                        <small style="opacity:.6;">(${v.length} chars)</small>
-                        <button class="btn-small-copy" onclick='copyToClipboard(${JSON.stringify(v)}, this)'>📋</button>
+                        <small style="opacity:.65;">(${v.length} chars)</small>
+                        <button class="btn-small-copy" onclick='copyToClipboard(${JSON.stringify(v)}, this)'>📋 Copy</button>
                     </li>
                 `).join('')}
             </ul>
-            <p><strong>URL Slug:</strong> /${data.url_slug || ''}</p>
-            <p><strong>Soft CTA:</strong> ${data.cta_soft || ''}</p>
-            <p><strong>Direct CTA:</strong> ${data.cta_direct || ''}</p>
+            <p><strong>URL Slug:</strong> <code>/${data.url_slug || ''}</code></p>
+            <p><strong>Soft CTA:</strong> ${data.cta_soft || 'None'}</p>
+            <p><strong>Direct CTA:</strong> ${data.cta_direct || 'None'}</p>
         </div>
         ${internalLinksBlock(data.internal_link_suggestions)}
     `;
@@ -201,15 +242,16 @@ function renderSingleResult(data) {
 }
 
 async function copyToClipboard(text, buttonEl) {
-    const original = buttonEl.textContent;
+    const original = buttonEl ? buttonEl.textContent : '';
     try {
         await navigator.clipboard.writeText(text || '');
-        buttonEl.textContent = '✅ Copied!';
+        if (buttonEl) buttonEl.textContent = '✅ Copied!';
+        showToast('Copied to clipboard!', 'success');
     } catch (err) {
-        buttonEl.textContent = '❌ Copy failed';
-        showError('Clipboard copy failed — your browser may be blocking clipboard access. Try selecting the text manually.');
+        if (buttonEl) buttonEl.textContent = '❌ Failed';
+        showToast('Clipboard copy failed. Please select text manually.', 'error');
     }
-    setTimeout(() => { buttonEl.textContent = original; }, 1800);
+    if (buttonEl) setTimeout(() => { buttonEl.textContent = original; }, 1800);
 }
 
 async function downloadExport(kind, ext) {
@@ -229,6 +271,7 @@ async function downloadExport(kind, ext) {
         a.download = `${(payload.topic || 'article').toLowerCase().replace(/\s+/g, '-')}.${ext}`;
         a.click();
         URL.revokeObjectURL(url);
+        showToast(`Downloaded ${ext.toUpperCase()} file`, 'success');
     } catch (err) {
         showError(`Export to ${ext} failed: ${err.message}`);
     }
@@ -241,29 +284,33 @@ function renderBatchResults(data) {
         const req = state.lastRequests[i] || {};
         const label = req.topic || 'Item ' + (i + 1);
         if (r.error) {
-            const scopeNote = r.out_of_scope ? ' <em>(out of scope for this tool)</em>' : '';
-            return `<div class="article-content"><p style="color:#e66">❌ <strong>${label}</strong>: ${r.error}${scopeNote}</p></div>`;
+            const scopeNote = r.out_of_scope ? ' <em>(out of scope)</em>' : '';
+            return `<div class="article-content" style="border-color:rgba(239,68,68,0.3);"><p style="color:var(--danger);">❌ <strong>${label}</strong>: ${r.error}${scopeNote}</p></div>`;
         }
         const words = r.metrics?.wordCount ?? '';
         return `
-            <details class="glass" style="margin-bottom:1rem;padding:1rem;">
-                <summary><strong>${label}</strong> (${r.provider_used || 'mock'}, ${words} words)</summary>
-                ${metricsBlock(r)}
-                <div class="article-content">${safeHTML(r.optimized_article_markdown)}</div>
-                <div style="display:flex; gap:0.5rem; margin-top:0.75rem; flex-wrap:wrap;">
-                    <button class="btn-primary" style="width:auto;padding:.4rem .8rem;margin-top:0;font-size:.85rem;" onclick='downloadOneFromBatch(${i}, "docx")'>Download DOCX</button>
-                    <button class="btn-primary" style="width:auto;padding:.4rem .8rem;margin-top:0;font-size:.85rem;" onclick='downloadOneFromBatch(${i}, "pdf")'>Download PDF</button>
-                    <button class="btn-primary" style="width:auto;padding:.4rem .8rem;margin-top:0;font-size:.85rem;" onclick='copyToClipboard(state.lastBatchMarkdowns[${i}], event.target)'>📋 Copy</button>
+            <details class="glass" style="margin-bottom:1rem; padding:1.25rem;">
+                <summary style="cursor:pointer; font-weight:600; font-size:1.05rem;">
+                    <strong>${label}</strong> <span class="status-pill pill-ok">${r.provider_used || 'mock'}</span> <span style="font-size:0.85rem; opacity:.7;">(${words} words)</span>
+                </summary>
+                <div style="margin-top:1rem;">
+                    ${metricsBlock(r)}
+                    <div class="article-content">${safeHTML(r.optimized_article_markdown)}</div>
+                    <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
+                        <button class="btn-secondary" onclick='downloadOneFromBatch(${i}, "docx")'>📄 DOCX</button>
+                        <button class="btn-secondary" onclick='downloadOneFromBatch(${i}, "pdf")'>📕 PDF</button>
+                        <button class="btn-secondary" onclick='copyToClipboard(state.lastBatchMarkdowns[${i}], event.target)'>📋 Copy</button>
+                    </div>
                 </div>
             </details>`;
     }).join('');
 
     resultsPanel.innerHTML = `
-        <div class="results-header">
-            <h2>Batch Results — ${data.succeeded}/${data.total} succeeded</h2>
-            <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
-                <button class="btn-primary" style="width:auto;padding:.5rem 1rem;margin-top:0;" id="download-zip-btn">⬇ Download All (ZIP)</button>
-                <button class="btn-primary" style="width:auto;padding:.5rem 1rem;margin-top:0;" id="copy-all-btn">📋 Copy All</button>
+        <div class="results-header" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:1rem; margin-bottom:1.5rem;">
+            <h2>Batch Results (${data.succeeded}/${data.total} Succeeded)</h2>
+            <div style="display:flex; gap:0.5rem;">
+                <button class="btn-primary" style="width:auto;" id="download-zip-btn">⬇ Download ZIP Bundle</button>
+                <button class="btn-secondary" id="copy-all-btn">📋 Copy All</button>
             </div>
         </div>
         ${items}
@@ -292,7 +339,7 @@ async function downloadOneFromBatch(index, kind) {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload)
         });
-        if (!res.ok) { showError(`Export to ${kind} failed for "${payload.topic}".`); return; }
+        if (!res.ok) { showError(`Export failed for "${payload.topic}".`); return; }
         const blob = await res.blob();
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
@@ -301,7 +348,7 @@ async function downloadOneFromBatch(index, kind) {
         a.click();
         URL.revokeObjectURL(url);
     } catch (err) {
-        showError(`Export to ${kind} failed: ${err.message}`);
+        showError(`Export failed: ${err.message}`);
     }
 }
 
@@ -309,7 +356,7 @@ async function downloadBatchZip() {
     const btn = document.getElementById('download-zip-btn');
     const originalText = btn.textContent;
     btn.disabled = true;
-    btn.textContent = 'Preparing ZIP...';
+    btn.textContent = 'Compressing...';
     try {
         const res = await fetch('/export/batch/zip', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -323,6 +370,7 @@ async function downloadBatchZip() {
         a.download = 'healthy-gut-ai-batch.zip';
         a.click();
         URL.revokeObjectURL(url);
+        showToast('Downloaded ZIP bundle', 'success');
     } catch (err) {
         showError(`Batch ZIP export failed: ${err.message}`);
     } finally {
@@ -338,13 +386,13 @@ document.getElementById('preview-outline-btn').addEventListener('click', async (
     const article_type = document.getElementById('article_type').value;
 
     if (!topic) {
-        showError('Enter a topic first to preview its outline.');
+        showError('Please enter a topic to preview its outline.');
         return;
     }
 
     const previewEl = document.getElementById('outline-preview');
     previewEl.classList.remove('hidden');
-    previewEl.innerHTML = '<p style="opacity:.7;">Loading outline preview...</p>';
+    previewEl.innerHTML = '<p style="color:var(--text-muted);">Consulting medical knowledge base...</p>';
 
     try {
         const params = new URLSearchParams({ topic, keyword, geo, article_type });
@@ -352,23 +400,24 @@ document.getElementById('preview-outline-btn').addEventListener('click', async (
         const data = await res.json();
 
         if (!data.in_scope) {
-            previewEl.innerHTML = `<p style="color:#ffb3b3;">⚠ ${data.scope_note}</p>`;
+            previewEl.innerHTML = `<div class="seo-meta" style="border-color:var(--warning);"><p>⚠️ ${data.scope_note}</p></div>`;
             return;
         }
 
-        const sections = data.planned_sections.map(s => `<li>${s.heading} <span style="opacity:.6;">(~${s.target_words} words)</span></li>`).join('');
-        const sources = data.grounding_sources.map(s => `<li>${s.title} <span style="opacity:.6;">(relevance ${s.relevance_score})</span></li>`).join('');
+        const sections = data.planned_sections.map(s => `<li><strong>${s.heading}</strong> <span style="color:var(--text-muted); font-size:0.85rem;">(~${s.target_words} words)</span></li>`).join('');
+        const sources = data.grounding_sources.map(s => `<li>${s.title} <span style="color:var(--text-muted); font-size:0.85rem;">(Relevance ${s.relevance_score})</span></li>`).join('');
 
         previewEl.innerHTML = `
-            <div class="glass" style="padding:1rem; margin: 0.75rem 0;">
-                <p><strong>Target length:</strong> ${data.target_word_count} words</p>
-                <p><strong>Planned structure:</strong></p>
-                <ul>${sections}</ul>
-                <p><strong>Will be grounded in:</strong></p>
-                <ul>${sources || '<li>General gut-health context</li>'}</ul>
+            <div class="glass" style="padding:1.25rem; margin-top:0.75rem;">
+                <h4 style="color:var(--primary); margin-bottom:0.5rem;">Article Outline Plan (${data.target_word_count} words target)</h4>
+                <p><strong>Sections:</strong></p>
+                <ul style="padding-left:1.2rem; margin-bottom:0.75rem;">${sections}</ul>
+                <p><strong>Verified Grounding Context:</strong></p>
+                <ul style="padding-left:1.2rem;">${sources || '<li>Internal Gut-Health Guidelines</li>'}</ul>
             </div>
         `;
+        showToast('Outline preview loaded', 'info');
     } catch (err) {
-        previewEl.innerHTML = `<p style="color:#ffb3b3;">Outline preview failed: ${err.message}</p>`;
+        previewEl.innerHTML = `<p style="color:var(--danger);">Outline preview failed: ${err.message}</p>`;
     }
 });
