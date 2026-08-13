@@ -18,7 +18,7 @@ from sklearn.metrics.pairwise import cosine_similarity
 
 from app.rag.knowledge_base import KNOWLEDGE_BASE
 
-logger = logging.getLogger("healthy_gut_ai.rag")
+logger = logging.getLogger("gutfolio.rag")
 
 
 class Retriever:
@@ -96,6 +96,21 @@ _GUT_HEALTH_TERMS = (
     "gastro", "colon", "rectal", "flatulence", "abdominal", "nausea", "ulcer",
 )
 
+# Hindi/Devanagari equivalents — the topic/keyword fields are free text, and
+# a Hindi-language generation request often has the topic itself typed in
+# Devanagari (not just the output). Without this, a completely on-topic
+# Hindi query like "कब्ज़ के घरेलू उपाय" (constipation home remedies) matched
+# none of the English terms above, and then scored ~0 on TF-IDF against an
+# all-English knowledge base — so it was silently rejected as "out of scope"
+# with no indication that the real cause was the input language, not the
+# topic itself.
+_GUT_HEALTH_TERMS_HI = (
+    "गट", "पाचन", "आंत", "आंतों", "पेट", "कब्ज", "दस्त", "अपच", "गैस", "सूजन", "ब्लोटिंग",
+    "एसिडिटी", "सीने में जलन", "आईबीएस", "आईबीडी", "सीलिएक", "ग्लूटेन", "लैक्टोज़", "लैक्टोस",
+    "प्रोबायोटिक", "प्रीबायोटिक", "फाइबर", "माइक्रोबायोम", "कोलाइटिस", "क्रोन", "अल्सर",
+    "मरोड़", "बवासीर", "अफारा", "जठर",
+)
+
 
 def is_in_domain(topic: str, keyword: str) -> bool:
     """True if the topic/keyword is plausibly gut/digestive-health related.
@@ -104,12 +119,17 @@ def is_in_domain(topic: str, keyword: str) -> bool:
     off-topic, low-trust content rather than a genuinely useful article.
 
     Uses a hybrid check: an explicit gut-health term allowlist (reliable for
-    the common case) plus a high TF-IDF similarity bar as a fallback for
-    phrasing the term list doesn't cover. TF-IDF alone on this small a
-    corpus over-matches on generic medical words ("disease", "chronic")
-    shared across every chunk, so it can't be the only signal.
+    the common case, in both English and Hindi) plus a high TF-IDF
+    similarity bar as a fallback for phrasing the term lists don't cover.
+    TF-IDF alone on this small a corpus over-matches on generic medical
+    words ("disease", "chronic") shared across every chunk, so it can't be
+    the only signal — and TF-IDF against the (English-only) knowledge base
+    is not a meaningful signal at all for a Hindi-typed query, so the Hindi
+    term list is checked before falling back to it.
     """
     combined = f"{topic} {keyword}".lower()
     if any(term in combined for term in _GUT_HEALTH_TERMS):
+        return True
+    if any(term in combined for term in _GUT_HEALTH_TERMS_HI):
         return True
     return retriever.max_relevance(combined) >= DOMAIN_MIN_SCORE

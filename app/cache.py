@@ -41,6 +41,17 @@ class TTLCache:
                 del self._store[oldest_key]
             self._store[key] = (time.time() + self._ttl, value)
 
+    def clear(self) -> int:
+        """Drops every entry, returning how many were removed. Used by the
+        test suite (the cache is a process-wide singleton, so one test's
+        generation would otherwise be served to the next) and available as
+        the manual reset when a knowledge-base or prompt change makes cached
+        articles stale before their TTL expires."""
+        with self._lock:
+            count = len(self._store)
+            self._store.clear()
+            return count
+
     def stats(self) -> dict:
         with self._lock:
             return {"entries": len(self._store), "max_entries": self._max, "ttl_seconds": self._ttl}

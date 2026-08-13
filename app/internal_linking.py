@@ -20,7 +20,7 @@ from sklearn.metrics.pairwise import cosine_similarity
 
 from app.db import get_connection, get_lock
 
-logger = logging.getLogger("healthy_gut_ai.internal_linking")
+logger = logging.getLogger("gutfolio.internal_linking")
 
 MIN_LINK_SCORE = 0.12
 

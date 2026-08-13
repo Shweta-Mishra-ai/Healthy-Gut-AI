@@ -1,111 +1,116 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Healthy Gut AI | Analytics & Quality Dashboard</title>
-    <link rel="stylesheet" href="/static/style.css">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@500;600;700;800&display=swap" rel="stylesheet">
-    <style>
-        table { width: 100%; border-collapse: collapse; margin-top: 1.25rem; }
-        th, td { text-align: left; padding: 0.75rem 1rem; border-bottom: 1px solid var(--card-border); font-size: 0.9rem; }
-        th { color: var(--text-muted); font-weight: 600; }
-    </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Gutfolio | Dashboard</title>
+<meta name="robots" content="noindex">
+<link rel="stylesheet" href="/static/style.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Work+Sans:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
 </head>
 <body>
-    <div class="background-globes">
-        <div class="globe globe-1"></div>
-        <div class="globe globe-2"></div>
-    </div>
+<a class="skip-link" href="#main">Skip to content</a>
+<div class="background-globes" aria-hidden="true"></div>
 
-    <main class="container">
-        <header>
-            <div class="header-brand">
-                <div class="brand-icon">📊</div>
-                <h1>System Dashboard</h1>
-            </div>
-            <p class="subtitle">Real-time metrics, provider distribution, quality scores, and cache performance.</p>
-            <div class="nav-links">
-                <a href="/">✨ Generator</a>
-                <a href="/review">📋 Review Queue</a>
-                <a href="/dashboard" class="active">📊 Dashboard</a>
-                <button type="button" class="theme-toggle-btn" id="theme-toggle-btn" title="Toggle Dark/Light Mode">🌙</button>
-            </div>
-        </header>
+<main class="container" id="main">
+<header>
+<div class="header-brand">
+<div class="brand-icon" aria-hidden="true"></div>
+<div class="header-text">
+<h1>Dashboard</h1>
+<p class="subtitle">Throughput, provider mix, quality scores and cache performance for this instance.</p>
+</div>
+</div>
+<nav class="nav-links" aria-label="Primary">
+<a href="/">Generator</a>
+<a href="/review">Review Queue</a>
+<a href="/dashboard" class="active" aria-current="page">Dashboard</a>
+<button type="button" class="chip-btn" id="access-key-btn" aria-expanded="false" aria-controls="access-key-panel">Access key</button>
+<button type="button" class="chip-btn" id="theme-toggle-btn">Dark</button>
+</nav>
+<div id="access-key-panel" class="access-key-panel hidden">
+<label for="access-key-input">Access key</label>
+<p class="muted small">Only needed if this deployment sets <code>API_KEY</code>. Stored in this browser and sent as the <code>X-API-Key</code> header.</p>
+<div class="access-key-row">
+<input type="password" id="access-key-input" autocomplete="off" spellcheck="false" placeholder="Paste key">
+<button type="button" class="btn-secondary" id="access-key-save">Save</button>
+<button type="button" class="btn-secondary" id="access-key-clear">Clear</button>
+</div>
+</div>
+</header>
 
-        <section class="generator-panel glass">
-            <h3 style="font-family:'Outfit',sans-serif; margin-bottom:1rem; color:var(--text-main);">Performance Overview</h3>
-            <div id="dash-summary" class="dash-grid"></div>
+<section class="generator-panel glass">
+<span class="eyebrow">System report</span>
+<h3>Performance overview</h3>
+<div id="dash-summary" class="dash-grid" style="margin-top:1rem;"></div>
 
-            <h3 style="font-family:'Outfit',sans-serif; margin-top:2rem; margin-bottom:0.75rem; color:var(--text-main);">Recent Generations</h3>
-            <div style="overflow-x:auto;">
-                <table id="dash-table">
-                    <thead>
-                        <tr>
-                            <th>Topic</th>
-                            <th>Provider</th>
-                            <th>Status</th>
-                            <th>Quality</th>
-                            <th>Words</th>
-                            <th>Cache</th>
-                        </tr>
-                    </thead>
-                    <tbody></tbody>
-                </table>
-            </div>
-        </section>
-    </main>
+<h3 style="margin-top:2rem;">Recent generations</h3>
+<div class="table-scroll">
+<table class="dash-table" id="dash-table">
+<thead>
+<tr>
+<th scope="col">Topic</th>
+<th scope="col">Provider</th>
+<th scope="col">Status</th>
+<th scope="col">Quality</th>
+<th scope="col">Words</th>
+<th scope="col">Cache</th>
+</tr>
+</thead>
+<tbody></tbody>
+</table>
+</div>
+</section>
+</main>
 
-    <script>
-        const theme = localStorage.getItem('theme') || 'light';
-        document.documentElement.setAttribute('data-theme', theme);
-        const themeBtn = document.getElementById('theme-toggle-btn');
-        if (themeBtn) {
-            themeBtn.textContent = theme === 'dark' ? '☀️' : '🌙';
-            themeBtn.addEventListener('click', () => {
-                const next = document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
-                document.documentElement.setAttribute('data-theme', next);
-                localStorage.setItem('theme', next);
-                themeBtn.textContent = next === 'dark' ? '☀️' : '🌙';
-            });
+<div id="toast-container" aria-live="polite"></div>
+<script src="/static/ui.js"></script>
+<script src="/static/scoring.js"></script>
+<script>
+const esc = Gutfolio.escapeHTML;
+
+async function loadDashboard() {
+    const summary = document.getElementById('dash-summary');
+    const tbody = document.querySelector('#dash-table tbody');
+    try {
+        const res = await Gutfolio.apiFetch('/dashboard/stats?recent=30');
+        if (!res.ok) {
+            summary.innerHTML = '<p class="empty-state">Could not load stats. Check your access key and refresh.</p>';
+            return;
         }
+        const data = await res.json();
 
-        async function loadDashboard() {
-            try {
-                const res = await fetch('/dashboard/stats?recent=30');
-                const data = await res.json();
+        summary.innerHTML = `
+<div class="dash-card"><h3>${esc(data.total_requests)}</h3><p>Total requests</p></div>
+<div class="dash-card"><h3>${esc(data.succeeded)}</h3><p>Succeeded</p></div>
+<div class="dash-card"><h3>${esc(data.out_of_scope)}</h3><p>Out of scope</p></div>
+<div class="dash-card"><h3>${esc(data.failed)}</h3><p>Failed</p></div>
+<div class="dash-card"><h3>${scoreBadge(data.avg_quality_score)}</h3><p>Average quality</p></div>
+<div class="dash-card"><h3>${esc(data.avg_word_count)}</h3><p>Average words</p></div>
+<div class="dash-card"><h3>${esc(data.cache_hit_rate_percent)}%</h3><p>Cache hit rate</p></div>`;
 
-                const summary = document.getElementById('dash-summary');
-                summary.innerHTML = `
-                    <div class="dash-card"><h3>${data.total_requests}</h3><p>TOTAL REQUESTS</p></div>
-                    <div class="dash-card"><h3>${data.succeeded}</h3><p>SUCCEEDED</p></div>
-                    <div class="dash-card"><h3>${data.out_of_scope}</h3><p>OUT OF SCOPE</p></div>
-                    <div class="dash-card"><h3>${data.failed}</h3><p>FAILED</p></div>
-                    <div class="dash-card"><h3>${data.avg_quality_score}</h3><p>AVG QUALITY</p></div>
-                    <div class="dash-card"><h3>${data.avg_word_count}</h3><p>AVG WORDS</p></div>
-                    <div class="dash-card"><h3>${data.cache_hit_rate_percent}%</h3><p>CACHE HIT RATE</p></div>
-                `;
-
-                const tbody = document.querySelector('#dash-table tbody');
-                if (!data.recent.length) {
-                    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; color:var(--text-muted); padding:2rem 0;">No generations recorded yet. Use the Generator tab to begin.</td></tr>';
-                    return;
-                }
-                tbody.innerHTML = data.recent.map(r => `
-                    <tr>
-                        <td><strong>${r.topic}</strong></td>
-                        <td>${r.provider || '—'}</td>
-                        <td><span class="status-pill ${r.success ? 'pill-ok' : 'pill-fail'}">${r.success ? 'OK' : 'Failed'}</span></td>
-                        <td>${r.success ? r.quality_score : '—'}</td>
-                        <td>${r.success ? r.word_count : '—'}</td>
-                        <td>${r.cached ? 'Yes' : 'No'}</td>
-                    </tr>
-                `).join('');
-            } catch (err) {
-                console.error('Dashboard load failed:', err);
-            }
+        if (!data.recent.length) {
+            tbody.innerHTML = '<tr><td colspan="6" class="empty-state">Nothing generated yet. Start on the Generator tab.</td></tr>';
+            return;
         }
-        loadDashboard();
-    </script>
+        tbody.innerHTML = data.recent.map(r => `
+<tr>
+<td><strong>${esc(r.topic)}</strong></td>
+<td>${esc(r.provider ? Gutfolio.providerLabel(r.provider) : '—')}</td>
+<td><span class="status-pill ${r.success ? 'pill-ok' : 'pill-fail'}">${r.success ? 'OK' : 'Failed'}</span></td>
+<td>${r.success ? scoreBadge(r.quality_score) : '—'}</td>
+<td>${r.success ? esc(r.word_count) : '—'}</td>
+<td>${r.cached ? 'Yes' : 'No'}</td>
+</tr>`).join('');
+    } catch (err) {
+        console.error('Dashboard load failed:', err);
+        summary.innerHTML = `<p class="empty-state">Dashboard failed to load: ${esc(err.message)}</p>`;
+    }
+}
+
+loadDashboard();
+</script>
 </body>
 </html>

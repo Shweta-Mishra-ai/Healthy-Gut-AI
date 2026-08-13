@@ -1,9 +1,17 @@
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 
+from app.compliance import scan_article
+from app.config import settings
 from app.constants import OUT_OF_SCOPE_MESSAGE
 from app.internal_linking import find_related_articles
+from app.language import check_language
+from app.metrics import keyword_density, readability
+from app.quality import assess_quality
 from app.rag.retriever import is_in_domain, retriever
+from app.schemas import AnalyzeRequest
+from app.seo import build_seo_pack
+from app.similarity import check_duplication, duplication_summary
 
 router = APIRouter()
 
@@ -43,6 +51,46 @@ def rag_preview(topic: str, keyword: str = "", top_k: int = 3):
             {"title": c["title"], "topic": c["topic"], "relevance_score": c["relevance_score"], "excerpt": c["content"][:160] + "..."}
             for c in chunks
         ],
+    }
+
+
+@router.post("/analyze")
+def analyze_existing_article(payload: AnalyzeRequest):
+    """Audits an article that already exists — no generation, no provider
+    call, no cost.
+
+    This is the same scoring pipeline a generated article goes through
+    (metrics, YMYL compliance, quality, SEO pack, duplicate scan), pointed at
+    text the caller supplies. It lets an editor check a page that's already
+    live, or a draft written by a human, against the same bar as anything
+    this app produces.
+    """
+    article_md = payload.article_markdown
+    language = payload.language.value
+    topic = payload.topic or (article_md.strip().splitlines()[0].lstrip("# ").strip()[:200] if article_md.strip() else "")
+
+    result = {"optimized_article_markdown": article_md, "meta_description": "", "faqs": []}
+    result["metrics"] = {
+        "wordCount": len(article_md.split()),
+        "readability": readability(article_md, language),
+        "keywordDensity": keyword_density(article_md, payload.primary_keyword),
+    }
+    result["compliance"] = scan_article(article_md, language)
+    quality = assess_quality(result, topic, payload.primary_keyword, payload.article_type.value, language)
+    seo = build_seo_pack(result, topic, payload.primary_keyword, payload.geo_target, language,
+                         site_url=settings.PUBLIC_SITE_URL)
+    duplication = check_duplication(article_md, payload.primary_keyword)
+    duplication["summary"] = duplication_summary(duplication)
+
+    return {
+        "topic": topic,
+        "language": language,
+        "language_check": check_language(article_md, language),
+        "metrics": result["metrics"],
+        "compliance": result["compliance"],
+        "quality": quality,
+        "seo": seo,
+        "duplication": duplication,
     }
 
 

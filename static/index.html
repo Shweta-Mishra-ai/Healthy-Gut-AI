@@ -1,114 +1,159 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Healthy Gut AI | SEO Article & Clinical Content Generator</title>
-    <meta name="description" content="Generate medically accurate, grounded, and SEO-optimized gut health articles with automated human review workflows and WordPress publishing.">
-    <link rel="stylesheet" href="/static/style.css">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@500;600;700;800&display=swap" rel="stylesheet">
-    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.6/dist/purify.min.js"></script>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Gutfolio | Gut Health Content Workspace</title>
+<meta name="description" content="Draft, score and clear medically grounded gut-health articles: retrieval-grounded writing, compliance checks, structured data and a human review queue before anything publishes.">
+<link rel="stylesheet" href="/static/style.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Work+Sans:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
 </head>
 <body>
-    <div class="background-globes">
-        <div class="globe globe-1"></div>
-        <div class="globe globe-2"></div>
-    </div>
+<a class="skip-link" href="#main">Skip to content</a>
 
-    <main class="container">
-        <header>
-            <div class="header-brand">
-                <div class="brand-icon">🌱</div>
-                <h1>Healthy Gut AI</h1>
-            </div>
-            <p class="subtitle">Generate precise, medically grounded, and SEO-optimized gut health content at scale.</p>
-            <div class="nav-links">
-                <a href="/" class="active">✨ Generator</a>
-                <a href="/review">📋 Review Queue</a>
-                <a href="/dashboard">📊 Dashboard</a>
-                <button type="button" class="theme-toggle-btn" id="theme-toggle-btn" title="Toggle Dark/Light Mode">🌙</button>
-            </div>
-        </header>
+<div class="background-globes" aria-hidden="true">
+<svg class="root-motif" viewBox="0 0 620 620" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="#3F6E5B" stroke-width="1.4" stroke-linecap="round">
+<path d="M420 40 C 380 140, 440 190, 400 280 C 370 350, 300 360, 280 440 C 265 500, 300 540, 270 590"/>
+<path d="M400 280 C 460 300, 500 270, 550 310"/>
+<path d="M400 280 C 430 340, 410 380, 460 420"/>
+<path d="M280 440 C 220 450, 200 490, 150 480"/>
+<path d="M280 440 C 250 490, 260 530, 210 560"/>
+<path d="M420 40 C 460 70, 470 60, 510 90"/>
+</svg>
+</div>
 
-        <section class="generator-panel glass">
-            <div class="mode-toggle">
-                <button type="button" class="mode-btn active" data-mode="single">Single Article</button>
-                <button type="button" class="mode-btn" data-mode="batch">Batch Generator</button>
-            </div>
+<main class="container" id="main">
+<header>
+<div class="header-brand">
+<div class="brand-icon" aria-hidden="true"></div>
+<div class="header-text">
+<h1>Gutfolio</h1>
+<p class="subtitle">Draft, score and clear gut-health articles — grounded in a medical knowledge base, checked for claim risk, and held for human sign-off.</p>
+</div>
+</div>
+<nav class="nav-links" aria-label="Primary">
+<a href="/" class="active" aria-current="page">Generator</a>
+<a href="/review">Review Queue</a>
+<a href="/dashboard">Dashboard</a>
+<button type="button" class="chip-btn" id="access-key-btn" aria-expanded="false" aria-controls="access-key-panel">Access key</button>
+<button type="button" class="chip-btn" id="theme-toggle-btn">Dark</button>
+</nav>
+<div id="access-key-panel" class="access-key-panel hidden">
+<label for="access-key-input">Access key</label>
+<p class="muted small">Only needed if this deployment sets <code>API_KEY</code>. Stored in this browser and sent as the <code>X-API-Key</code> header.</p>
+<div class="access-key-row">
+<input type="password" id="access-key-input" autocomplete="off" spellcheck="false" placeholder="Paste key">
+<button type="button" class="btn-secondary" id="access-key-save">Save</button>
+<button type="button" class="btn-secondary" id="access-key-clear">Clear</button>
+</div>
+</div>
+</header>
 
-            <form id="generate-form">
-                <div id="single-fields">
-                    <div class="form-group">
-                        <label for="topic">Article Topic</label>
-                        <input type="text" id="topic" name="topic" placeholder="e.g. Irritable Bowel Syndrome Management" required maxlength="200">
-                    </div>
-                    <div class="form-group">
-                        <label for="primary_keyword">Primary Keyword</label>
-                        <input type="text" id="primary_keyword" name="primary_keyword" placeholder="e.g. IBS diet tips" required maxlength="100">
-                    </div>
-                    <div class="form-group">
-                        <label for="geo_target">Geo-Target Location</label>
-                        <input type="text" id="geo_target" name="geo_target" placeholder="e.g. New York, USA" required maxlength="100">
-                    </div>
-                </div>
+<section class="generator-panel glass">
+<span class="eyebrow">Draft request</span>
 
-                <div id="batch-fields" class="hidden">
-                    <div class="form-group">
-                        <label for="batch_topics">Topics (one per line, format: topic | keyword | geo)</label>
-                        <textarea id="batch_topics" rows="5" placeholder="IBS diet guide | IBS diet tips | USA&#10;GERD natural remedies | acid reflux relief | UK&#10;Probiotics for bloating | probiotic benefits | Canada"></textarea>
-                    </div>
-                </div>
+<div class="mode-toggle" role="tablist" aria-label="Request mode">
+<button type="button" class="mode-btn active" data-mode="single">Single article</button>
+<button type="button" class="mode-btn" data-mode="batch">Batch</button>
+<button type="button" class="mode-btn" data-mode="audit">Audit existing</button>
+</div>
 
-                <div class="form-group row">
-                    <div class="col">
-                        <label for="article_type">Article Type</label>
-                        <select id="article_type" name="article_type">
-                            <option value="pillar">Pillar Guide (2500+ words)</option>
-                            <option value="supporting" selected>Supporting Article (1000+ words)</option>
-                        </select>
-                    </div>
-                    <div class="col">
-                        <label for="language">Language</label>
-                        <select id="language" name="language">
-                            <option value="en" selected>English</option>
-                            <option value="hi">Hindi (हिंदी)</option>
-                        </select>
-                    </div>
-                    <div class="col">
-                        <label for="tone">Tone of Voice</label>
-                        <select id="tone" name="tone">
-                            <option value="educational" selected>Educational</option>
-                            <option value="authoritative">Authoritative / Clinical</option>
-                            <option value="patient_friendly">Patient-Friendly</option>
-                            <option value="academic">Academic / Formal</option>
-                            <option value="seo_blog">SEO Blog</option>
-                        </select>
-                    </div>
-                </div>
+<form id="generate-form" novalidate>
+<div id="single-fields">
+<div class="form-group">
+<label for="topic">Article topic</label>
+<input type="text" id="topic" name="topic" placeholder="Irritable bowel syndrome management" required maxlength="200" autocomplete="off">
+</div>
+<div class="form-group row">
+<div class="col">
+<label for="primary_keyword">Primary keyword</label>
+<input type="text" id="primary_keyword" name="primary_keyword" placeholder="IBS diet tips" required maxlength="100" autocomplete="off">
+</div>
+<div class="col">
+<label for="geo_target">Geo target</label>
+<input type="text" id="geo_target" name="geo_target" placeholder="Mumbai, India" required maxlength="100" autocomplete="off">
+</div>
+</div>
+</div>
 
-                <div style="margin-top: 1rem; display: flex; gap: 0.75rem;">
-                    <button type="button" id="preview-outline-btn" class="btn-secondary" style="flex: 1;">👁 Preview Outline & Sources</button>
-                    <button type="submit" id="generate-btn" class="btn-primary" style="flex: 2;">⚡ Generate Content</button>
-                </div>
-                
-                <div id="outline-preview" class="hidden" style="margin-top: 1rem;"></div>
-            </form>
+<div id="batch-fields" class="hidden">
+<div class="form-group">
+<label for="batch_topics">Topics — one per line, as <code>topic | keyword | geo</code></label>
+<textarea id="batch_topics" rows="5" spellcheck="false" placeholder="IBS diet guide | IBS diet tips | USA&#10;GERD natural remedies | acid reflux relief | UK&#10;Probiotics for bloating | probiotic benefits | Canada"></textarea>
+<p class="muted small">Results stream in one at a time as each article finishes, so a long batch never sits behind a single request.</p>
+</div>
+</div>
 
-            <div id="loading" class="hidden">
-                <div class="spinner"></div>
-                <p style="font-weight: 600;">Synthesizing medical knowledge base & optimizing SEO...</p>
-                <p style="font-size: 0.85rem; color: var(--text-muted); margin-top: 0.4rem;">Ensuring strict clinical accuracy, medical disclaimers, and grounded references.</p>
-            </div>
-            <div id="form-error" class="hidden"></div>
-        </section>
+<div id="audit-fields" class="hidden">
+<div class="form-group">
+<label for="audit_markdown">Paste an existing article</label>
+<textarea id="audit_markdown" rows="10" spellcheck="false" placeholder="Paste markdown or plain text from your CMS. Nothing is generated — the article is scored for claim risk, readability, structure and overlap with your existing library."></textarea>
+</div>
+<div class="form-group row">
+<div class="col">
+<label for="audit_keyword">Primary keyword (optional)</label>
+<input type="text" id="audit_keyword" maxlength="100" placeholder="IBS diet tips" autocomplete="off">
+</div>
+<div class="col">
+<label for="audit_topic">Topic (optional)</label>
+<input type="text" id="audit_topic" maxlength="200" placeholder="Defaults to the first heading" autocomplete="off">
+</div>
+</div>
+</div>
 
-        <section id="results" class="results-panel glass hidden">
-            <!-- Results populated dynamically by app.js -->
-        </section>
-    </main>
+<div class="form-group row" id="options-row">
+<div class="col">
+<label for="article_type">Article type</label>
+<select id="article_type" name="article_type">
+<option value="pillar">Pillar guide — 2500+ words</option>
+<option value="supporting" selected>Supporting article — 1000+ words</option>
+</select>
+</div>
+<div class="col">
+<label for="language">Language</label>
+<select id="language" name="language">
+<option value="en" selected>English</option>
+<option value="hi">Hindi (हिंदी)</option>
+</select>
+</div>
+<div class="col" id="tone-col">
+<label for="tone">Tone of voice</label>
+<select id="tone" name="tone">
+<option value="educational" selected>Educational</option>
+<option value="authoritative">Authoritative / clinical</option>
+<option value="patient_friendly">Patient-friendly</option>
+<option value="academic">Academic / formal</option>
+<option value="seo_blog">Search blog</option>
+</select>
+</div>
+</div>
 
-    <div id="toast-container"></div>
-    <script src="/static/app.js"></script>
+<div class="form-actions">
+<button type="button" id="preview-outline-btn" class="btn-secondary">Preview outline &amp; sources</button>
+<button type="submit" id="generate-btn" class="btn-primary">Generate content</button>
+</div>
+
+<div id="outline-preview" class="hidden"></div>
+</form>
+
+<div id="loading" class="hidden" aria-live="polite">
+<div class="spinner" aria-hidden="true"></div>
+<p class="loading-title">Working through the pipeline</p>
+<p class="muted small" id="loading-detail">Retrieving grounding sources, drafting, then optimising for search.</p>
+</div>
+
+<div id="batch-progress" class="hidden" aria-live="polite"></div>
+<div id="form-error" class="form-error hidden" role="alert"></div>
+</section>
+
+<section id="results" class="results-panel glass hidden" aria-live="polite"></section>
+</main>
+
+<div id="toast-container" aria-live="polite" aria-atomic="false"></div>
+<script src="/static/ui.js"></script>
+<script src="/static/scoring.js"></script>
+<script src="/static/app.js"></script>
 </body>
 </html>

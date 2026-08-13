@@ -78,6 +78,33 @@ class BatchGenerateRequest(BaseModel):
         return v
 
 
+class AnalyzeRequest(BaseModel):
+    """Audit an article that already exists — pasted from a CMS, written by a
+    human, or generated elsewhere. Runs the same compliance, SEO and
+    duplicate checks as a fresh generation, with no provider call."""
+
+    article_markdown: str = Field(..., min_length=50, max_length=200_000)
+    topic: str = Field("", max_length=200)
+    primary_keyword: str = Field("", max_length=100)
+    geo_target: str = Field("", max_length=100)
+    article_type: ArticleType = ArticleType.supporting
+    language: Language = Language.en
+
+    @field_validator("article_markdown")
+    @classmethod
+    def v_article(cls, v):
+        if not (v or "").strip():
+            raise ValueError("article_markdown cannot be empty or whitespace-only")
+        return v
+
+    @field_validator("topic", "primary_keyword", "geo_target")
+    @classmethod
+    def v_optional_text(cls, v):
+        # Deliberately looser than clean_text_field: these are optional
+        # context for an audit, not values interpolated into a prompt.
+        return _WHITESPACE.sub(" ", v or "").strip()
+
+
 class ReviewActionRequest(BaseModel):
     note: str = Field("", max_length=500)
     reviewer_name: str = Field("", max_length=100)

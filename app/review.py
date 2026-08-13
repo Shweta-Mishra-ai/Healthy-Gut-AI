@@ -129,7 +129,24 @@ class ReviewStore:
     @classmethod
     def _row_to_summary_dict(cls, row) -> dict:
         d = dict(row)
-        d.pop("article_json", None)
+        article_json = d.pop("article_json", None)
+        # The queue list only needs the score + flags, not the full article
+        # body — pull just those two out so a reviewer can see *why* a score
+        # is low without opening the draft.
+        d["quality_flags"] = []
+        d["compliance_risk"] = None
+        d["compliance_counts"] = {}
+        d["duplication_status"] = None
+        if article_json:
+            try:
+                article = json.loads(article_json)
+                d["quality_flags"] = article.get("quality", {}).get("flags", [])
+                compliance = article.get("compliance") or {}
+                d["compliance_risk"] = compliance.get("risk_level")
+                d["compliance_counts"] = compliance.get("counts", {})
+                d["duplication_status"] = (article.get("duplication") or {}).get("status")
+            except (json.JSONDecodeError, AttributeError):
+                pass
         d["reviewer_badge"] = cls._reviewer_badge(d)
         return d
 

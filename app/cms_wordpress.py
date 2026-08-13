@@ -22,7 +22,7 @@ import requests
 
 from app.config import settings
 
-logger = logging.getLogger("healthy_gut_ai.wordpress")
+logger = logging.getLogger("gutfolio.wordpress")
 
 
 def is_configured() -> bool:

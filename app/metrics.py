@@ -26,18 +26,40 @@ def count_syllables(word: str) -> int:
     return len(re.findall(r"[aeiouy]+", word.lower())) or 1
 
 
-def readability(text: str) -> dict:
+_SENTENCE_END_RE = re.compile(r"[.!?।॥]")  # includes Devanagari danda/double-danda
+
+
+def readability(text: str, language: str = "en") -> dict:
     if not text or not text.strip():
         return {"fleschReadingEase": 0.0, "gunningFogIndex": 0.0, "avgSentenceLength": 0.0, "gradeLevel": "n/a", "note": "empty text"}
     words = re.findall(r"\S+", text)
     nw = len(words) or 1
-    sentences = len(re.findall(r"[.!?]", text)) or 1
+    sentences = len(_SENTENCE_END_RE.findall(text)) or 1
+    avg_sentence_length = round(nw / sentences, 2)
+
+    if language != "en":
+        # Flesch Reading Ease and Gunning Fog are both calibrated on English
+        # syllable-per-word and word-per-sentence norms via a vowel-cluster
+        # syllable heuristic ([aeiouy]+) that only matches Latin vowels. On
+        # Devanagari text that heuristic silently returns "1 syllable" for
+        # every single word regardless of actual complexity, which used to
+        # produce nonsense scores (e.g. -180, "very difficult, specialist
+        # level" on a perfectly simple sentence) and a false quality-score
+        # penalty on every Hindi article. Rather than report a wrong number,
+        # only the (now correctly Devanagari-aware) sentence length is given.
+        return {
+            "fleschReadingEase": None,
+            "gunningFogIndex": None,
+            "avgSentenceLength": avg_sentence_length,
+            "gradeLevel": "n/a",
+            "note": "English-calibrated readability formulas don't apply to this language.",
+        }
+
     syllables = sum(count_syllables(w) for w in words) or nw
     flesch = round(206.835 - 1.015 * (nw / sentences) - 84.6 * (syllables / nw), 2)
     flesch = max(-200.0, min(206.835, flesch))
 
     complex_words = sum(1 for w in words if count_syllables(w) >= 3)
-    avg_sentence_length = round(nw / sentences, 2)
     gunning_fog = round(0.4 * (avg_sentence_length + 100 * (complex_words / nw)), 2)
 
     if flesch >= 70:

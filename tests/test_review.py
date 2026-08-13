@@ -24,6 +24,26 @@ def test_review_queue_lists_drafts():
     assert any(i["topic"] == "IBS diet plan queue test" for i in items)
 
 
+def test_review_queue_exposes_quality_flags():
+    # Regression test: the queue list used to drop quality.flags entirely,
+    # so a low score showed up with zero explanation of *why* it was low
+    # (e.g. mixed-language output, missing disclaimer, weak keyword
+    # placement). The summary row must now carry them through.
+    payload = {"topic": "IBS diet plan flags test", "primary_keyword": "IBS diet", "geo_target": "USA"}
+    gen = client.post("/generate", json=payload)
+    assert gen.status_code == 200
+    expected_flags = gen.json()["quality"]["flags"]
+
+    r = client.get("/review/queue?status=draft")
+    assert r.status_code == 200
+    items = r.json()["items"]
+    match = next(i for i in items if i["topic"] == "IBS diet plan flags test")
+    assert "quality_flags" in match
+    assert match["quality_flags"] == expected_flags
+    # And the field must never leak the full article body.
+    assert "article_json" not in match
+
+
 def test_review_queue_invalid_status_rejected():
     r = client.get("/review/queue?status=not_a_status")
     assert r.status_code == 422
