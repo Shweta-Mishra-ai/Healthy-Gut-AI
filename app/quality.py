@@ -8,12 +8,19 @@ always comes with a specific, actionable reason.
 
 import re
 
+from app.language import MIN_SCRIPT_PURITY, find_foreign_script_chars, script_purity
+
 WORD_TARGETS = {
     "pillar": (2500, 3000),
     "supporting": (1000, 1500),
 }
 
 _SLUG_RE = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
+# A Hindi article legitimately carries a Devanagari slug (browsers and search
+# engines handle the percent-encoded form fine), so the ASCII-only pattern
+# flagged every well-formed Hindi URL as malformed. Mixed Devanagari/Latin is
+# also normal — the keyword is usually kept in Latin.
+_SLUG_RE_DEVANAGARI = re.compile(r"^[a-z0-9\u0900-\u097F]+(-[a-z0-9\u0900-\u097F]+)*$")
 
 # Shared with app/llm_providers.py::_ensure_disclaimer — kept here as the
 # single source of truth so the two checks can't drift out of sync (which
@@ -24,23 +31,12 @@ DISCLAIMER_MARKERS = (
     "अस्वीकरण", "चिकित्सा सलाह",  # Hindi: "disclaimer", "medical advice"
 )
 
-# Unicode block ranges used to measure script purity for non-English languages.
-# Only Hindi is supported as a generation language today (see app/schemas.py
-# Language enum) — extend this dict if more languages are added.
-_LANGUAGE_SCRIPT_RANGES = {
-    "hi": ("\u0900", "\u097F"),  # Devanagari
-}
-_MIN_SCRIPT_PURITY = 0.5
-
-
-def _script_purity(text: str, lo: str, hi: str) -> float:
-    """Fraction of alphabetic characters falling inside the target script's
-    Unicode range. Returns 1.0 for empty/no-letter text (nothing to flag)."""
-    letters = [ch for ch in text if ch.isalpha()]
-    if not letters:
-        return 1.0
-    in_script = sum(1 for ch in letters if lo <= ch <= hi)
-    return in_script / len(letters)
+# Languages whose script purity is worth reporting on. The ranges themselves,
+# and the purity floor, live in app/language.py — that module is the gate that
+# rejects a contaminated generation outright, and this is the report on what
+# got through, so the two must agree on what "in-script" means.
+_LANGUAGE_SCRIPT_RANGES = {"hi": True}
+_MIN_SCRIPT_PURITY = MIN_SCRIPT_PURITY
 
 
 def assess_quality(result: dict, topic: str, primary_keyword: str, article_type: str, language: str = "en") -> dict:
@@ -80,15 +76,27 @@ def assess_quality(result: dict, topic: str, primary_keyword: str, article_type:
             score -= 3
 
     if kw:
-        opening = article_md.lower()[:250]
-        if kw not in opening:
-            flags.append("Primary keyword doesn't appear in the article's opening/title area.")
-            score -= 15
-        if kw not in meta.lower():
-            flags.append("Primary keyword is missing from the meta description.")
-            score -= 10
+        # The keyword-in-body/meta check assumes the keyword is written in the
+        # same script as the article. That's true for English content, but for
+        # Hindi articles the SEO keyword is almost always kept in English/Latin
+        # script on purpose (that's how people actually search), while the
+        # article body is written in Devanagari — so this exact-substring check
+        # would fail on every single well-written Hindi article and dock 25
+        # points for a non-issue. Only enforce it for scripts where a literal
+        # substring match is actually meaningful.
+        kw_is_latin = bool(re.fullmatch(r"[a-z0-9\s\-']+", kw))
+        skip_keyword_check = language in _LANGUAGE_SCRIPT_RANGES and kw_is_latin
+        if not skip_keyword_check:
+            opening = article_md.lower()[:250]
+            if kw not in opening:
+                flags.append("Primary keyword doesn't appear in the article's opening/title area.")
+                score -= 15
+            if kw not in meta.lower():
+                flags.append("Primary keyword is missing from the meta description.")
+                score -= 10
 
-    if slug and not _SLUG_RE.match(slug):
+    slug_pattern = _SLUG_RE_DEVANAGARI if language == "hi" else _SLUG_RE
+    if slug and not slug_pattern.match(slug):
         flags.append(f"URL slug '{slug}' isn't clean lowercase-hyphenated format.")
         score -= 5
 
@@ -115,14 +123,36 @@ def assess_quality(result: dict, topic: str, primary_keyword: str, article_type:
         # titles are expected to keep English proper nouns even in a
         # non-English article, and shouldn't count against language purity.
         body_for_check = re.split(r"##\s*(Sources Referenced|संदर्भित स्रोत|References)", article_md)[0]
-        lo, hi = _LANGUAGE_SCRIPT_RANGES[language]
-        purity = _script_purity(body_for_check, lo, hi)
+        purity = script_purity(body_for_check, language)
         if purity < _MIN_SCRIPT_PURITY:
             flags.append(
                 f"Requested language was '{language}' but only {purity:.0%} of the article's letters are "
-                f"in the expected script — likely mixed-language output from the LLM. Review before publishing."
+                f"in the expected script — likely mixed-language output. Review before publishing."
             )
             score -= 20
+
+    # A single stray character from an unrelated writing system (Han,
+    # Cyrillic, ...) is the visible symptom of a model losing the thread
+    # mid-generation. app/language.py rejects the bad response outright at
+    # generation time; this catches anything that reached scoring by another
+    # path (cached content from an older build, or an imported article).
+    foreign = find_foreign_script_chars(article_md)
+    if foreign:
+        detail = ", ".join(f"{name} x{count}" for name, count in sorted(foreign.items()))
+        flags.append(f"Article contains characters from another writing system ({detail}) — do not publish as-is.")
+        score -= 25
+
+    compliance = result.get("compliance")
+    if isinstance(compliance, dict):
+        counts = compliance.get("counts", {})
+        if counts.get("blocker"):
+            flags.append(
+                f"{counts['blocker']} compliance blocker(s) found — see the Compliance tab. "
+                f"These must be fixed before publishing."
+            )
+        elif counts.get("warning"):
+            flags.append(f"{counts['warning']} compliance warning(s) need an editor's confirmation.")
+        score -= compliance.get("score_penalty", 0)
 
     score = max(0, min(100, score))
     return {"score": score, "flags": flags, "word_count": word_count}

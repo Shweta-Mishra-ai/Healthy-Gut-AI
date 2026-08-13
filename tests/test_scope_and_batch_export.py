@@ -17,6 +17,30 @@ def test_unrelated_topic_is_out_of_domain():
     assert is_in_domain("infectious disease epidemiology", "epidemiology trends") is False
 
 
+def test_hindi_gut_health_topic_is_in_domain():
+    """Regression test: the topic/keyword fields are free text, and a
+    Hindi-language generation request often has the topic itself typed in
+    Devanagari, not just the output language selected. The domain check
+    used to only recognize English gut-health terms and then fall back to
+    TF-IDF similarity against an all-English knowledge base — which scores
+    ~0 for Hindi text — so a completely on-topic Hindi query like
+    "constipation home remedies" was silently rejected as out-of-scope.
+    From the UI this looked exactly like a random/unexplained error."""
+    assert is_in_domain("कब्ज़ के घरेलू उपाय", "कब्ज़ का इलाज") is True
+    assert is_in_domain("पेट में गैस और सूजन", "गैस की समस्या") is True
+
+
+def test_hindi_unrelated_topic_is_out_of_domain():
+    assert is_in_domain("क्वांटम कंप्यूटिंग", "क्वांटम") is False
+
+
+def test_generate_accepts_hindi_typed_gut_health_topic():
+    payload = {"topic": "कब्ज़ के घरेलू उपाय", "primary_keyword": "कब्ज़ का इलाज", "geo_target": "India", "language": "hi"}
+    r = client.post("/generate", json=payload)
+    assert r.status_code == 200
+    assert "wordCount" in r.json()["metrics"]
+
+
 def test_generate_rejects_out_of_scope_topic():
     payload = {"topic": "infectious disease epidemiology", "primary_keyword": "epidemiology", "geo_target": "USA"}
     r = client.post("/generate", json=payload)

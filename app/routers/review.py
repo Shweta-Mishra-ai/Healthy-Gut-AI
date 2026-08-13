@@ -8,7 +8,7 @@ from app.dashboard import tracker
 from app.review import InvalidTransitionError, ReviewNotFoundError, ReviewStatus, review_store
 from app.schemas import ReviewActionRequest
 
-logger = logging.getLogger("healthy_gut_ai.review")
+logger = logging.getLogger("gutfolio.review")
 router = APIRouter()
 
 

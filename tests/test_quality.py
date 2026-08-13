@@ -121,3 +121,70 @@ def test_language_check_skipped_for_english_requests():
     result = _base_result()
     q = assess_quality(result, "IBS diet plan", "ibs diet", "supporting", language="en")
     assert not any("mixed-language" in f for f in q["flags"])
+
+
+def test_hindi_article_not_penalized_for_english_keyword_transliterated():
+    """Regression test: the primary keyword is typically kept in English
+    even for Hindi content (that's how people actually search), so the
+    article body legitimately writes it in Devanagari transliteration
+    (e.g. "आईबीएस डाइट") rather than the literal Latin string "ibs diet".
+    The old exact-substring check couldn't see that and docked 25 points
+    from every well-formed Hindi article for a non-issue."""
+    hindi_article = (
+        "# आईबीएस डाइट टिप्स: संपूर्ण गाइड\n\n"
+        "यह लेख पाचन तंत्र से जुड़ी एक सामान्य समस्या के बारे में विस्तार से बताता है। " * 40
+        + "\n\n*चिकित्सा अस्वीकरण: यह लेख केवल शैक्षिक उद्देश्यों के लिए है।*"
+    )
+    result = _base_result(
+        optimized_article_markdown=hindi_article,
+        meta_description="आईबीएस डाइट के बारे में जानकारी और लक्षण प्रबंधन के तरीके यहां पढ़ें आज ही।",
+    )
+    q = assess_quality(result, "IBS diet plan", "ibs diet", "supporting", language="hi")
+    assert not any("Primary keyword" in f for f in q["flags"])
+
+    # And the same exact-substring check must still fire for English content,
+    # where a literally-missing keyword is a real, actionable SEO problem.
+    q_en = assess_quality(result, "IBS diet plan", "ibs diet", "supporting", language="en")
+    assert any("Primary keyword" in f for f in q_en["flags"])
+
+
+# --- Script and compliance integration ---------------------------------
+
+def test_devanagari_slug_is_valid_for_a_hindi_article():
+    """An ASCII-only slug pattern flagged every well-formed Hindi URL."""
+    result = {
+        "optimized_article_markdown": "पाचन तंत्र की देखभाल। " * 300,
+        "meta_description": "क" * 130,
+        "meta_description_variants": ["क" * 130, "ख" * 130],
+        "url_slug": "पाचन-तंत्र-की-देखभाल-guide",
+        "faqs": [{"question": "क?", "answer": "ख।"}, {"question": "ग?", "answer": "घ।"}],
+    }
+    flags = assess_quality(result, "पाचन", "pachan tips", "supporting", "hi")["flags"]
+    assert not any("slug" in f for f in flags)
+
+
+def test_malformed_slug_is_still_flagged_for_hindi():
+    result = {"optimized_article_markdown": "पाचन " * 300, "url_slug": "Bad Slug!"}
+    flags = assess_quality(result, "पाचन", "pachan", "supporting", "hi")["flags"]
+    assert any("slug" in f for f in flags)
+
+
+def test_foreign_script_characters_are_flagged_and_penalised():
+    clean = {"optimized_article_markdown": "Gut health guidance. " * 300}
+    dirty = {"optimized_article_markdown": "Gut health guidance. " * 300 + " 消化系统健康"}
+    clean_score = assess_quality(clean, "gut", "gut health", "supporting")["score"]
+    dirty_report = assess_quality(dirty, "gut", "gut health", "supporting")
+    assert dirty_report["score"] < clean_score
+    assert any("another writing system" in f for f in dirty_report["flags"])
+
+
+def test_compliance_blockers_lower_the_quality_score():
+    base = {"optimized_article_markdown": "Gut health guidance. " * 300}
+    with_blockers = {
+        **base,
+        "compliance": {"counts": {"blocker": 2, "warning": 0, "notice": 0}, "score_penalty": 30},
+    }
+    assert (assess_quality(with_blockers, "gut", "gut health", "supporting")["score"]
+            < assess_quality(base, "gut", "gut health", "supporting")["score"])
+    assert any("compliance blocker" in f for f in
+               assess_quality(with_blockers, "gut", "gut health", "supporting")["flags"])

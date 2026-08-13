@@ -1,6 +1,8 @@
 import logging
 import os
+import secrets
 import time
+import uuid
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
@@ -20,15 +22,16 @@ logging.basicConfig(
     level=os.getenv("LOG_LEVEL", "INFO"),
     format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
 )
-logger = logging.getLogger("healthy_gut_ai")
+logger = logging.getLogger("gutfolio")
 
-app = FastAPI(title="Healthy Gut AI", version="2.0.0")
+app = FastAPI(title="Gutfolio", version="2.0.0")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=os.getenv("CORS_ORIGINS", "*").split(","),
-    allow_methods=["GET", "POST"],
+    allow_origins=[o.strip() for o in os.getenv("CORS_ORIGINS", "*").split(",") if o.strip()],
+    allow_methods=["GET", "POST", "HEAD", "OPTIONS"],
     allow_headers=["*"],
+    expose_headers=["X-Request-ID", "X-Response-Time", "Retry-After"],
 )
 
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
@@ -45,35 +48,82 @@ PROTECTED_PATH_PREFIXES = (
     "/generate", "/export", "/debug", "/review", "/dashboard", "/publish",
 )
 
+# The review queue and dashboard are HTML pages loaded directly by a browser,
+# which cannot attach an X-API-Key header to a top-level navigation. They sit
+# under protected prefixes, so with API_KEY set both pages used to return a
+# raw 401 JSON body in the browser window and the whole review workflow was
+# unreachable. The pages themselves expose no data — every number on them is
+# fetched by JS from the API routes below, which stay protected — so the
+# documents are served and the data behind them is what's guarded.
+PUBLIC_PAGE_PATHS = ("/review", "/dashboard")
+
+# Endpoints that can trigger a full generation, and therefore real provider
+# spend. /export/* was previously unmetered: an unauthenticated caller could
+# skip the rate limiter entirely by POSTing to /export/pdf instead of
+# /generate and get the identical pipeline run for free.
+RATE_LIMITED_PATHS = (
+    "/generate", "/generate/batch", "/generate/batch/stream",
+    "/export/markdown", "/export/json", "/export/docx", "/export/pdf", "/export/batch/zip",
+)
+
+SECURITY_HEADERS = {
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "DENY",
+    "Referrer-Policy": "strict-origin-when-cross-origin",
+}
+
+
+def _requires_api_key(request: Request) -> bool:
+    if not settings.API_KEY:
+        return False
+    path = request.url.path.rstrip("/") or "/"
+    if request.method in ("GET", "HEAD") and path in PUBLIC_PAGE_PATHS:
+        return False
+    return path.startswith(PROTECTED_PATH_PREFIXES)
+
 
 @app.middleware("http")
 async def rate_limit_and_logging_middleware(request: Request, call_next):
     start = time.time()
+    request_id = request.headers.get("x-request-id") or uuid.uuid4().hex[:12]
 
-    if settings.API_KEY and request.url.path.startswith(PROTECTED_PATH_PREFIXES):
+    if _requires_api_key(request):
         provided = request.headers.get("x-api-key", "")
-        if provided != settings.API_KEY:
-            logger.warning("Rejected request to %s: missing/invalid API key", request.url.path)
-            return JSONResponse(status_code=401, content={"error": "Missing or invalid API key. Set the X-API-Key header."})
+        # Constant-time comparison: a plain != leaks the key one byte at a
+        # time to anyone who can measure response latency.
+        if not secrets.compare_digest(provided, settings.API_KEY):
+            logger.warning("[%s] Rejected request to %s: missing/invalid API key", request_id, request.url.path)
+            return JSONResponse(
+                status_code=401,
+                content={"error": "Missing or invalid API key. Set the X-API-Key header."},
+                headers={"X-Request-ID": request_id},
+            )
 
-    if request.url.path in ("/generate", "/generate/batch"):
+    if request.method == "POST" and request.url.path.rstrip("/") in RATE_LIMITED_PATHS:
         key = client_key(request)
         allowed, retry_after = rate_limiter.allow(key)
         if not allowed:
-            logger.warning("Rate limit hit for %s on %s", key, request.url.path)
+            logger.warning("[%s] Rate limit hit for %s on %s", request_id, key, request.url.path)
             return JSONResponse(
                 status_code=429,
                 content={"error": "Rate limit exceeded. Please slow down.", "retry_after_seconds": retry_after},
-                headers={"Retry-After": str(retry_after)},
+                headers={"Retry-After": str(retry_after), "X-Request-ID": request_id},
             )
     try:
         response = await call_next(request)
     except Exception as e:
-        logger.exception("Unhandled error on %s: %s", request.url.path, e)
-        return JSONResponse(status_code=500, content={"error": "Internal server error"})
+        logger.exception("[%s] Unhandled error on %s: %s", request_id, request.url.path, e)
+        return JSONResponse(
+            status_code=500,
+            content={"error": "Internal server error", "request_id": request_id},
+            headers={"X-Request-ID": request_id},
+        )
     duration_ms = round((time.time() - start) * 1000, 1)
     response.headers["X-Response-Time"] = f"{duration_ms}ms"
-    logger.info("%s %s -> %s (%sms)", request.method, request.url.path, response.status_code, duration_ms)
+    response.headers["X-Request-ID"] = request_id
+    for header, value in SECURITY_HEADERS.items():
+        response.headers.setdefault(header, value)
+    logger.info("[%s] %s %s -> %s (%sms)", request_id, request.method, request.url.path, response.status_code, duration_ms)
     return response
 
 

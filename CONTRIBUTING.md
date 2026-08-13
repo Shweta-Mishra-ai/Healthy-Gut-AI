@@ -1,6 +1,6 @@
-# Contributing to Healthy Gut AI
+# Contributing to Gutfolio
 
-Thanks for considering a contribution to **Healthy Gut AI**. We welcome small, focused pull requests that maintain high code quality, test coverage, and performance.
+Thanks for considering a contribution to **Gutfolio**. We welcome small, focused pull requests that maintain high code quality, test coverage, and performance.
 
 ## Ground Rules
 

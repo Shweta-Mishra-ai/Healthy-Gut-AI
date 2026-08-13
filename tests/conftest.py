@@ -5,8 +5,20 @@ for var in ("GROQ_API_KEY", "OPENROUTER_API_KEY", "OPENAI_API_KEY", "API_KEY"):
 
 import pytest
 
+from app.cache import article_cache
 from app.db import reset_db_for_tests
 from app.rate_limit import rate_limiter
+
+
+@pytest.fixture(autouse=True)
+def _reset_article_cache():
+    """The article cache is a process-wide singleton keyed on the request
+    fields, so two tests generating the same topic would silently share one
+    result — the second seeing `cached: true` and skipping the code path it
+    meant to exercise."""
+    article_cache.clear()
+    yield
+    article_cache.clear()
 
 
 @pytest.fixture(autouse=True)
