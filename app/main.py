@@ -16,7 +16,7 @@ from app.config import settings
 from app.constants import STATIC_DIR
 from app.rate_limit import rate_limiter
 from app.review import review_store
-from app.routers import discovery, generation, publish
+from app.routers import articles, discovery, generation, publish
 from app.routers import review as review_router
 
 logging.basicConfig(
@@ -53,7 +53,7 @@ def client_key(request: Request) -> str:
 
 
 PROTECTED_PATH_PREFIXES = (
-    "/generate", "/export", "/debug", "/review", "/dashboard", "/publish",
+    "/generate", "/export", "/debug", "/review", "/dashboard", "/publish", "/articles",
 )
 
 # The review queue and dashboard are HTML pages loaded directly by a browser,
@@ -79,6 +79,26 @@ SECURITY_HEADERS = {
     "X-Frame-Options": "DENY",
     "Referrer-Policy": "strict-origin-when-cross-origin",
 }
+
+# The app's own pages load only same-origin scripts (no inline <script>, no
+# on*= handlers, no style="" attributes), so they can run under a strict
+# policy: an injected tag in model output or a reviewer note would not
+# execute even if an escaping bug let it into the DOM. Scoped to these pages
+# because FastAPI's /docs and /redoc load their UI from a CDN with inline
+# scripts, and would break under it.
+APP_PAGES = ("/", "/review", "/dashboard")
+APP_PAGE_CSP = "; ".join((
+    "default-src 'self'",
+    "script-src 'self'",
+    "style-src 'self' https://fonts.googleapis.com",
+    "font-src 'self' https://fonts.gstatic.com",
+    "img-src 'self' data:",
+    "connect-src 'self'",
+    "object-src 'none'",
+    "base-uri 'self'",
+    "form-action 'self'",
+    "frame-ancestors 'none'",
+))
 
 
 def _requires_api_key(request: Request) -> bool:
@@ -131,7 +151,12 @@ async def rate_limit_and_logging_middleware(request: Request, call_next):
     response.headers["X-Request-ID"] = request_id
     for header, value in SECURITY_HEADERS.items():
         response.headers.setdefault(header, value)
-    logger.info("[%s] %s %s -> %s (%sms)", request_id, request.method, request.url.path, response.status_code, duration_ms)
+    if request.method in ("GET", "HEAD") and (request.url.path.rstrip("/") or "/") in APP_PAGES:
+        response.headers.setdefault("Content-Security-Policy", APP_PAGE_CSP)
+    logger.info(
+        "[%s] %s %s -> %s (%sms)",
+        request_id, request.method, request.url.path, response.status_code, duration_ms,
+    )
     return response
 
 
@@ -148,14 +173,20 @@ def _serializable_errors(errors) -> list:
     return clean
 
 
+def _validation_failed(errors) -> JSONResponse:
+    return JSONResponse(
+        status_code=422, content={"error": "Validation failed", "details": _serializable_errors(errors)}
+    )
+
+
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
-    return JSONResponse(status_code=422, content={"error": "Validation failed", "details": _serializable_errors(exc.errors())})
+    return _validation_failed(exc.errors())
 
 
 @app.exception_handler(ValidationError)
 async def pydantic_validation_handler(request: Request, exc: ValidationError):
-    return JSONResponse(status_code=422, content={"error": "Validation failed", "details": _serializable_errors(exc.errors())})
+    return _validation_failed(exc.errors())
 
 
 @app.api_route("/health", methods=["GET", "HEAD"])
@@ -221,6 +252,7 @@ app.include_router(generation.router)
 app.include_router(discovery.router)
 app.include_router(review_router.router)
 app.include_router(publish.router)
+app.include_router(articles.router)
 
 
 if __name__ == "__main__":

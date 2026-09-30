@@ -1,4 +1,5 @@
 from fastapi.testclient import TestClient
+
 from app.export import markdown_to_docx_bytes, markdown_to_pdf_bytes
 from app.main import app
 
@@ -41,8 +42,9 @@ def test_markdown_to_pdf_preserves_hindi_text():
     # blank lines with no error raised anywhere. Now a Unicode font is
     # embedded whenever the content contains Devanagari, and round-tripping
     # through a real PDF text extractor must recover the original text.
-    import pdfplumber
     import io
+
+    import pdfplumber
 
     title = "आईबीएस डाइट टिप्स"
     body = "## परिचय\nयह एक टेस्ट लेख है जो पाचन स्वास्थ्य के बारे में है।"

@@ -15,6 +15,7 @@ site. Only articles with review_status == 'approved' are ever eligible
 visible at the API layer).
 """
 
+import html
 import logging
 import re
 
@@ -23,6 +24,9 @@ import requests
 from app.config import settings
 
 logger = logging.getLogger("gutfolio.wordpress")
+
+_NOT_CONFIGURED = "WordPress is not configured — set WORDPRESS_URL, WORDPRESS_USERNAME, WORDPRESS_APP_PASSWORD."
+_AUTH_FAILED = "Authentication failed — check WORDPRESS_USERNAME and WORDPRESS_APP_PASSWORD."
 
 
 def is_configured() -> bool:
@@ -47,7 +51,7 @@ def test_connection() -> dict:
     """Verifies the configured credentials actually work, without publishing
     anything. Safe to call repeatedly — read-only."""
     if not is_configured():
-        return {"connected": False, "error": "WordPress is not configured — set WORDPRESS_URL, WORDPRESS_USERNAME, WORDPRESS_APP_PASSWORD."}
+        return {"connected": False, "error": _NOT_CONFIGURED}
 
     url = f"{settings.WORDPRESS_URL}/wp-json/wp/v2/users/me"
     try:
@@ -64,35 +68,136 @@ def test_connection() -> dict:
         return {"connected": True, "user": data.get("name", settings.WORDPRESS_USERNAME), "error": None}
 
     if resp.status_code in (401, 403):
-        return {"connected": False, "error": "Authentication failed — check WORDPRESS_USERNAME and WORDPRESS_APP_PASSWORD."}
+        return {"connected": False, "error": _AUTH_FAILED}
     if resp.status_code == 404:
-        return {"connected": False, "error": f"WordPress REST API not found at {url} — check WORDPRESS_URL and that the REST API is enabled."}
+        return {
+            "connected": False,
+            "error": f"WordPress REST API not found at {url} — check WORDPRESS_URL and that the REST API is enabled.",
+        }
     return {"connected": False, "error": f"WordPress returned HTTP {resp.status_code}."}
 
 
+_SAFE_URL = re.compile(r"^(https?://|/|#|mailto:)", re.IGNORECASE)
+_TABLE_DIVIDER = re.compile(r"^\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?$")
+_HEADING = re.compile(r"^(#{1,6})\s+(.*)$")
+_BULLET = re.compile(r"^\s*[-*+]\s+")
+_NUMBERED = re.compile(r"^\s*\d+[.)]\s+")
+_RULE = re.compile(r"^(-{3,}|\*{3,}|_{3,})$")
+
+
+def _inline(text: str) -> str:
+    """Escapes first, then adds a fixed set of tags — the same construction
+    as the in-app renderer (static/ui.js). Model output is untrusted: the old
+    converter copied it into the post body verbatim, so an `<img onerror=...>`
+    in an article became live markup on the WordPress site (administrators
+    have unfiltered_html, so WordPress does not strip it for them)."""
+    out = html.escape(text, quote=True)
+    out = re.sub(r"`([^`]+)`", r"<code>\1</code>", out)
+
+    def link(match):
+        label, url = match.group(1), html.unescape(match.group(2))
+        if _SAFE_URL.match(url):
+            return f'<a href="{html.escape(url, quote=True)}">{label}</a>'
+        return label  # javascript:, data: and friends lose the link, keep the text
+
+    out = re.sub(r"\[([^\]]+)\]\(([^)\s]+)\)", link, out)
+    out = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", out)
+    out = re.sub(r"(^|[\s(])\*([^*\n]+)\*", r"\1<em>\2</em>", out)
+    out = re.sub(r"(^|[\s(])_([^_\n]+)_", r"\1<em>\2</em>", out)
+    return out
+
+
+def _table_row(line: str) -> list[str]:
+    return [cell.strip() for cell in line.strip().strip("|").split("|")]
+
+
+def _is_block_start(lines: list[str], i: int) -> bool:
+    s = lines[i].strip()
+    return bool(
+        not s or s.startswith(("```", ">")) or _HEADING.match(s) or _RULE.match(s)
+        or _BULLET.match(s) or _NUMBERED.match(s)
+        or (s.startswith("|") and i + 1 < len(lines) and _TABLE_DIVIDER.match(lines[i + 1].strip()))
+    )
+
+
 def _markdown_to_basic_html(markdown_text: str) -> str:
-    """Minimal, dependency-free markdown->HTML for WordPress post content.
-    Not a full renderer — handles headings, paragraphs, and bold/italic,
-    which covers what this app's generated articles actually use."""
-    lines = markdown_text.splitlines()
-    html_lines = []
-    for line in lines:
-        stripped = line.strip()
-        if not stripped:
+    """Dependency-free markdown -> HTML for WordPress post content: headings,
+    paragraphs, bullet and numbered lists, tables, blockquotes, rules, code,
+    links and bold/italic. Everything is HTML-escaped before tags are added.
+
+    Lists and tables used to come out as "<p>- item</p>" or not at all,
+    which dropped the comparison tables and step lists that carry most of
+    an article's practical value."""
+    lines = (markdown_text or "").replace("\r\n", "\n").split("\n")
+    out: list[str] = []
+    i = 0
+    while i < len(lines):
+        s = lines[i].strip()
+        if not s:
+            i += 1
             continue
-        if stripped.startswith("### "):
-            html_lines.append(f"<h3>{stripped[4:]}</h3>")
-        elif stripped.startswith("## "):
-            html_lines.append(f"<h2>{stripped[3:]}</h2>")
-        elif stripped.startswith("# "):
-            html_lines.append(f"<h1>{stripped[2:]}</h1>")
-        elif stripped.startswith("|"):
-            continue  # tables skipped, same tradeoff as the DOCX/PDF export
-        else:
-            text = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", stripped)
-            text = re.sub(r"\*(.+?)\*", r"<em>\1</em>", text)
-            html_lines.append(f"<p>{text}</p>")
-    return "\n".join(html_lines)
+
+        if s.startswith("```"):
+            body = []
+            i += 1
+            while i < len(lines) and not lines[i].strip().startswith("```"):
+                body.append(lines[i])
+                i += 1
+            i += 1
+            out.append(f"<pre><code>{html.escape(chr(10).join(body))}</code></pre>")
+            continue
+
+        heading = _HEADING.match(s)
+        if heading:
+            level = len(heading.group(1))
+            out.append(f"<h{level}>{_inline(heading.group(2).strip())}</h{level}>")
+            i += 1
+            continue
+
+        if _RULE.match(s):
+            out.append("<hr>")
+            i += 1
+            continue
+
+        if s.startswith("|") and i + 1 < len(lines) and _TABLE_DIVIDER.match(lines[i + 1].strip()):
+            header = _table_row(s)
+            i += 2
+            rows = []
+            while i < len(lines) and lines[i].strip().startswith("|"):
+                rows.append(_table_row(lines[i]))
+                i += 1
+            head_html = "".join(f"<th>{_inline(c)}</th>" for c in header)
+            body_html = "".join(
+                "<tr>" + "".join(f"<td>{_inline(c)}</td>" for c in row) + "</tr>" for row in rows
+            )
+            out.append(f"<table><thead><tr>{head_html}</tr></thead><tbody>{body_html}</tbody></table>")
+            continue
+
+        if _BULLET.match(s) or _NUMBERED.match(s):
+            marker = _BULLET if _BULLET.match(s) else _NUMBERED
+            tag = "ul" if marker is _BULLET else "ol"
+            items = []
+            while i < len(lines) and marker.match(lines[i]):
+                items.append(marker.sub("", lines[i], count=1).strip())
+                i += 1
+            out.append(f"<{tag}>" + "".join(f"<li>{_inline(item)}</li>" for item in items) + f"</{tag}>")
+            continue
+
+        if s.startswith(">"):
+            quoted = []
+            while i < len(lines) and lines[i].strip().startswith(">"):
+                quoted.append(lines[i].strip().lstrip(">").strip())
+                i += 1
+            out.append(f"<blockquote><p>{_inline(' '.join(q for q in quoted if q))}</p></blockquote>")
+            continue
+
+        paragraph = [s]
+        i += 1
+        while i < len(lines) and not _is_block_start(lines, i):
+            paragraph.append(lines[i].strip())
+            i += 1
+        out.append(f"<p>{_inline(' '.join(paragraph))}</p>")
+    return "\n".join(out)
 
 
 def publish_post(*, title: str, article_markdown: str, excerpt: str = "", slug: str = "",
@@ -108,7 +213,8 @@ def publish_post(*, title: str, article_markdown: str, excerpt: str = "", slug: 
         "title": title,
         "content": _markdown_to_basic_html(article_markdown),
         "status": status,
-        "excerpt": excerpt,
+        # The excerpt is model output too; themes print it as HTML.
+        "excerpt": html.escape(excerpt or "", quote=False),
         "slug": slug,
     }
 
@@ -117,7 +223,7 @@ def publish_post(*, title: str, article_markdown: str, excerpt: str = "", slug: 
                 "post_url": None, "updates_existing": post_id is not None, "error": None}
 
     if not is_configured():
-        return {"success": False, "error": "WordPress is not configured — set WORDPRESS_URL, WORDPRESS_USERNAME, WORDPRESS_APP_PASSWORD."}
+        return {"success": False, "error": _NOT_CONFIGURED}
 
     url = f"{settings.WORDPRESS_URL}/wp-json/wp/v2/posts"
     if post_id is not None:
@@ -137,12 +243,15 @@ def publish_post(*, title: str, article_markdown: str, excerpt: str = "", slug: 
         try:
             data = resp.json()
         except ValueError:
-            return {"success": False, "error": "WordPress accepted the request but returned an unexpected (non-JSON) response."}
+            return {
+                "success": False,
+                "error": "WordPress accepted the request but returned an unexpected (non-JSON) response.",
+            }
         return {"success": True, "post_id": data.get("id"), "post_url": data.get("link"), "status": data.get("status"),
                 "updated_existing": post_id is not None, "error": None}
 
     if resp.status_code in (401, 403):
-        return {"success": False, "error": "Authentication failed — check WORDPRESS_USERNAME and WORDPRESS_APP_PASSWORD."}
+        return {"success": False, "error": _AUTH_FAILED}
 
     try:
         err_body = resp.json()

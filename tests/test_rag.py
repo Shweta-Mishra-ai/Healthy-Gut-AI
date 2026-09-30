@@ -1,5 +1,5 @@
-from app.rag.retriever import Retriever, build_rag_context
 from app.rag.knowledge_base import KNOWLEDGE_BASE
+from app.rag.retriever import Retriever, build_rag_context
 
 
 def test_corpus_loaded():

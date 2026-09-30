@@ -118,6 +118,35 @@ class ReviewActionRequest(BaseModel):
         return v
 
 
+class ReviewEditRequest(BaseModel):
+    """A reviewer's corrected article body (and optionally meta description).
+    Only drafts can be edited; the edit is re-scored like a fresh article."""
+
+    article_markdown: str = Field(..., min_length=50, max_length=200_000)
+    meta_description: str | None = Field(None, max_length=320)
+    editor_name: str = Field("", max_length=100)
+
+    @field_validator("article_markdown")
+    @classmethod
+    def v_article(cls, v):
+        if not (v or "").strip():
+            raise ValueError("article_markdown cannot be empty or whitespace-only")
+        return v.strip()
+
+    @field_validator("meta_description")
+    @classmethod
+    def v_meta(cls, v):
+        return None if v is None else _WHITESPACE.sub(" ", v).strip()
+
+    @field_validator("editor_name")
+    @classmethod
+    def v_editor(cls, v):
+        v = (v or "").strip()
+        if v and _UNSAFE_CHARS.search(v):
+            raise ValueError("contains disallowed characters (< > { } $ `)")
+        return v
+
+
 class FAQ(BaseModel):
     question: str
     answer: str

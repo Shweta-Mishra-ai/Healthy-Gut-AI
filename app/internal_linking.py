@@ -82,7 +82,7 @@ def find_related_articles(topic: str, keyword: str, exclude_review_id: str = Non
     doc_vecs = matrix[:-1]
     scores = cosine_similarity(query_vec, doc_vecs)[0]
 
-    ranked = sorted(zip(scores, candidates), key=lambda pair: pair[0], reverse=True)
+    ranked = sorted(zip(scores, candidates, strict=True), key=lambda pair: pair[0], reverse=True)
     results = []
     for score, c in ranked[:top_k]:
         if score >= MIN_LINK_SCORE:

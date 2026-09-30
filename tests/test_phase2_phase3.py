@@ -1,7 +1,7 @@
 from fastapi.testclient import TestClient
 
-from app.main import app
 from app.dashboard import GenerationTracker
+from app.main import app
 
 client = TestClient(app)
 

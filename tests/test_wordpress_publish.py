@@ -165,9 +165,34 @@ def test_markdown_to_html_basic_conversion():
     assert "<h2>Subheading</h2>" in html
 
 
-def test_markdown_to_html_skips_tables():
+def test_markdown_to_html_renders_tables_as_html_tables():
     html = _markdown_to_basic_html("# T\n\n| a | b |\n|---|---|\n| 1 | 2 |")
     assert "|" not in html
+    assert "<table><thead><tr><th>a</th><th>b</th></tr></thead><tbody><tr><td>1</td><td>2</td></tr></tbody></table>" in html
+
+
+def test_markdown_to_html_escapes_raw_html_from_the_model():
+    html = _markdown_to_basic_html('Text <img src=x onerror="alert(1)"> and <script>x()</script>')
+    assert "<img" not in html and "<script" not in html
+    assert "&lt;img src=x onerror=&quot;alert(1)&quot;&gt;" in html
+
+
+def test_markdown_to_html_drops_unsafe_link_schemes_but_keeps_safe_ones():
+    html = _markdown_to_basic_html("[a](javascript:alert) [b](https://nih.gov?x=1&y=2) [c](data:text/html,hi)")
+    assert "javascript:" not in html and "data:" not in html
+    assert '<a href="https://nih.gov?x=1&amp;y=2">b</a>' in html
+
+
+def test_markdown_to_html_renders_lists():
+    html = _markdown_to_basic_html("- one\n- **two**\n\n1. first\n2. second")
+    assert "<ul><li>one</li><li><strong>two</strong></li></ul>" in html
+    assert "<ol><li>first</li><li>second</li></ol>" in html
+    assert "<p>-" not in html
+
+
+def test_publish_escapes_the_excerpt():
+    result = publish_post(title="T", article_markdown="# H", excerpt="<b onmouseover=x>hi</b>", dry_run=True)
+    assert result["would_send"]["excerpt"] == "&lt;b onmouseover=x&gt;hi&lt;/b&gt;"
 
 
 # --- Business rules enforced at the API layer (app/main.py) ---

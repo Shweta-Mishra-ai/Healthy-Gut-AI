@@ -103,7 +103,7 @@ def check_duplication(article_markdown: str, primary_keyword: str, exclude_id: s
         return {**empty, "corpus_size": len(corpus), "keyword_conflicts": keyword_conflicts}
 
     scores = cosine_similarity(matrix[-1], matrix[:-1])[0]
-    ranked = sorted(zip(scores, corpus), key=lambda pair: pair[0], reverse=True)
+    ranked = sorted(zip(scores, corpus, strict=True), key=lambda pair: pair[0], reverse=True)
 
     near_duplicates, related = [], []
     for score, c in ranked[:top_k * 2]:

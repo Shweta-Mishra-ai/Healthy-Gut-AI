@@ -1,77 +1,31 @@
 import asyncio
 import json
 import logging
-import re
-from urllib.parse import quote
 
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 
 from app.cache import article_cache
-from app.compliance import scan_article
 from app.config import settings
 from app.constants import OUT_OF_SCOPE_MESSAGE
 from app.dashboard import tracker
 from app.export import (
     FontUnavailableError,
     build_batch_zip,
+    content_disposition,
     markdown_to_docx_bytes,
     markdown_to_pdf_bytes,
 )
 from app.internal_linking import find_related_articles
 from app.llm_providers import llm_generate
-from app.metrics import keyword_density, readability
-from app.quality import assess_quality
+from app.pipeline import enrich_article
 from app.rag.retriever import is_in_domain
 from app.review import ReviewNotFoundError, ReviewStatus, review_store
 from app.schemas import BatchGenerateRequest, GenerateRequest
-from app.seo import build_seo_pack
 from app.similarity import check_duplication, duplication_summary
 
 logger = logging.getLogger("gutfolio.generation")
 router = APIRouter()
-
-
-def _content_disposition(topic: str, ext: str) -> str:
-    """Attachment header safe for any topic. Starlette encodes headers as
-    latin-1, so a Hindi topic interpolated raw raised UnicodeEncodeError and
-    every export for a Devanagari topic came back as a bare 500; a `"` in
-    the topic also terminated the quoted filename early. The ASCII
-    `filename` is the fallback for old clients, and RFC 5987 `filename*`
-    carries the real, percent-encoded UTF-8 name."""
-    # Only separators and characters that are unsafe in a filename are
-    # replaced — `\w` would also split Devanagari words at every vowel sign.
-    stem = re.sub(r'[\s/\\:*?"<>|\x00-\x1f]+', "-", topic.lower()).strip("-.") or "article"
-    ascii_stem = re.sub(r"[^a-z0-9]+", "-", stem.encode("ascii", "ignore").decode()).strip("-") or "article"
-    return f'attachment; filename="{ascii_stem}.{ext}"; filename*=UTF-8\'\'{quote(stem)}.{ext}'
-
-
-def _enrich(result: dict, req: GenerateRequest, review_id: str = None) -> dict:
-    """Everything computed from the finished article, in the order the later
-    steps depend on: metrics -> compliance -> quality (which folds the
-    compliance penalty in) -> SEO pack -> duplicate scan."""
-    article_md = result.get("optimized_article_markdown", "")
-    result["metrics"] = {
-        "wordCount": len(article_md.split()),
-        "readability": readability(article_md, req.language.value),
-        "keywordDensity": keyword_density(article_md, req.primary_keyword),
-    }
-    result["compliance"] = scan_article(article_md, req.language.value)
-    result["quality"] = assess_quality(
-        result, req.topic, req.primary_keyword, req.article_type.value, req.language.value
-    )
-    result["seo"] = build_seo_pack(
-        result, req.topic, req.primary_keyword, req.geo_target, req.language.value,
-        site_url=settings.PUBLIC_SITE_URL,
-    )
-    # The generated schema_json_ld from the model is a stub at best and
-    # invalid at worst; replace it with the graph built from the real article.
-    result["schema_json_ld"] = result["seo"]["structured_data"]
-
-    duplication = check_duplication(article_md, req.primary_keyword, exclude_id=review_id)
-    duplication["summary"] = duplication_summary(duplication)
-    result["duplication"] = duplication
-    return result
 
 
 async def _generate_one(req: GenerateRequest) -> dict:
@@ -79,21 +33,31 @@ async def _generate_one(req: GenerateRequest) -> dict:
         tracker.record(topic=req.topic, provider="", success=False, out_of_scope=True)
         return {"error": OUT_OF_SCOPE_MESSAGE, "out_of_scope": True}
 
-    cache_key = article_cache.make_key(req.topic, req.primary_keyword, req.geo_target, req.article_type.value, req.language.value, req.tone.value)
+    cache_key = article_cache.make_key(
+        req.topic, req.primary_keyword, req.geo_target, req.article_type.value, req.language.value, req.tone.value,
+    )
     cached = article_cache.get(cache_key)
-    review_status = None
+    stored = None
     if cached and cached.get("review_id"):
         try:
-            review_status = review_store.get(cached["review_id"])["status"]
+            stored = review_store.get(cached["review_id"])
         except ReviewNotFoundError:
             pass
+    review_status = stored["status"] if stored else None
     if review_status == ReviewStatus.rejected.value:
         # A reviewer turned this article down. Serving it again from cache
         # handed the same rejected text back (still labelled "draft") for the
         # rest of the TTL, so "regenerate after rejection" was impossible.
         cached = None
     if cached:
-        result = dict(cached)
+        # The review store, not the cache, is the source of truth: a reviewer
+        # may have edited the article since it was cached, and the cached
+        # copy would otherwise hand the pre-edit text back.
+        if stored:
+            result = dict(stored["article"])
+            result["review_id"] = stored["id"]
+        else:
+            result = dict(cached)
         result["cached"] = True
 
         review_id = result.get("review_id")
@@ -132,12 +96,20 @@ async def _generate_one(req: GenerateRequest) -> dict:
         )
         return result
 
-    result = await llm_generate(req.topic, req.primary_keyword, req.geo_target, req.article_type.value, req.language.value, req.tone.value)
+    feedback = review_store.latest_rejection_note(req.topic, req.primary_keyword)
+    result = await llm_generate(
+        req.topic, req.primary_keyword, req.geo_target, req.article_type.value, req.language.value,
+        req.tone.value, feedback=feedback,
+    )
     if "error" in result:
         tracker.record(topic=req.topic, provider="", success=False)
         return result
 
-    result = _enrich(result, req)
+    result = enrich_article(result, req)
+    # Kept with the stored article so later actions (reviewer edits, export,
+    # regenerate-after-rejection) know the geo, type, language and tone it
+    # was written for — the review row itself only has topic and keyword.
+    result["request"] = req.model_dump(mode="json")
     result["cached"] = False
     if not result.get("provider_note"):
         # provider_note means real providers are configured but every one of
@@ -148,7 +120,9 @@ async def _generate_one(req: GenerateRequest) -> dict:
     review_id = review_store.register(result, req.topic, req.primary_keyword)
     result["review_id"] = review_id
     result["review_status"] = ReviewStatus.draft.value
-    result["internal_link_suggestions"] = find_related_articles(req.topic, req.primary_keyword, exclude_review_id=review_id)
+    result["internal_link_suggestions"] = find_related_articles(
+        req.topic, req.primary_keyword, exclude_review_id=review_id
+    )
     tracker.record(
         topic=req.topic, provider=result.get("provider_used", ""), success=True, cached=False,
         word_count=result["metrics"]["wordCount"], quality_score=result["quality"]["score"],
@@ -306,7 +280,7 @@ async def export_markdown(payload: GenerateRequest):
     blocked = _export_guard(result)
     if blocked:
         return blocked
-    disposition = _content_disposition(payload.topic, "md")
+    disposition = content_disposition(payload.topic, "md")
     return Response(
         content=result.get("optimized_article_markdown", ""),
         media_type="text/markdown; charset=utf-8",
@@ -320,7 +294,7 @@ async def export_json(payload: GenerateRequest):
     blocked = _export_guard(result)
     if blocked:
         return blocked
-    disposition = _content_disposition(payload.topic, "json")
+    disposition = content_disposition(payload.topic, "json")
     return Response(
         content=json.dumps(result, indent=2, ensure_ascii=False),
         media_type="application/json; charset=utf-8",
@@ -335,7 +309,7 @@ async def export_docx(payload: GenerateRequest):
     if blocked:
         return blocked
     data = markdown_to_docx_bytes(payload.topic, result.get("optimized_article_markdown", ""))
-    disposition = _content_disposition(payload.topic, "docx")
+    disposition = content_disposition(payload.topic, "docx")
     return Response(
         content=data,
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
@@ -354,7 +328,7 @@ async def export_pdf(payload: GenerateRequest):
     except FontUnavailableError as e:
         # Surfaced as a real error rather than a 200 with a blank PDF.
         return JSONResponse(status_code=503, content={"error": str(e), "export_format": "pdf"})
-    disposition = _content_disposition(payload.topic, "pdf")
+    disposition = content_disposition(payload.topic, "pdf")
     return Response(
         content=data,
         media_type="application/pdf",

@@ -1,7 +1,8 @@
+import pytest
 from fastapi.testclient import TestClient
 
 from app.main import app
-from app.review import ReviewStore, ReviewNotFoundError, InvalidTransitionError, ReviewStatus
+from app.review import InvalidTransitionError, ReviewNotFoundError, ReviewStatus, ReviewStore
 
 client = TestClient(app)
 
@@ -144,22 +145,16 @@ def test_store_register_and_get():
 
 def test_store_get_missing_raises():
     store = ReviewStore()
-    try:
+    with pytest.raises(ReviewNotFoundError):
         store.get("nope")
-        assert False, "should have raised"
-    except ReviewNotFoundError:
-        pass
 
 
 def test_store_set_status_twice_raises():
     store = ReviewStore()
     aid = store.register({}, "Topic B", "kw")
     store.set_status(aid, ReviewStatus.approved)
-    try:
+    with pytest.raises(InvalidTransitionError):
         store.set_status(aid, ReviewStatus.rejected)
-        assert False, "should have raised"
-    except InvalidTransitionError:
-        pass
 
 
 def test_store_eviction_respects_max_entries():
@@ -167,9 +162,6 @@ def test_store_eviction_respects_max_entries():
     ids = [store.register({}, f"Topic {i}", "kw") for i in range(5)]
     assert store.counts()["total"] == 3
     # oldest two should be gone
-    try:
+    with pytest.raises(ReviewNotFoundError):
         store.get(ids[0])
-        assert False
-    except ReviewNotFoundError:
-        pass
     assert store.get(ids[-1])["topic"] == "Topic 4"

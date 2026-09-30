@@ -1,14 +1,15 @@
 from fastapi.testclient import TestClient
 
-from app.llm_providers import _ensure_meta_variants, _mock_result
 from app.main import app
+from app.mock_content import mock_result
+from app.postprocess import ensure_meta_variants
 from app.quality import assess_quality
 
 client = TestClient(app)
 
 
 def test_mock_result_has_3_variants():
-    result = _mock_result("IBS diet plan", "IBS diet", "USA")
+    result = mock_result("IBS diet plan", "IBS diet", "USA")
     variants = result["meta_description_variants"]
     assert len(variants) == 3
     assert all(isinstance(v, str) and v for v in variants)
@@ -19,7 +20,7 @@ def test_mock_result_hindi_produces_devanagari_content():
     language parameter entirely and always returned English, even when
     'hi' was requested — meaning anyone testing/demoing without a live
     LLM key configured would never see Hindi output."""
-    result = _mock_result("IBS diet plan", "IBS diet", "India", language="hi")
+    result = mock_result("IBS diet plan", "IBS diet", "India", language="hi")
     article = result["optimized_article_markdown"]
     has_devanagari = any("\u0900" <= ch <= "\u097F" for ch in article)
     assert has_devanagari
@@ -27,14 +28,14 @@ def test_mock_result_hindi_produces_devanagari_content():
 
 
 def test_mock_result_english_default_has_no_devanagari():
-    result = _mock_result("IBS diet plan", "IBS diet", "USA")
+    result = mock_result("IBS diet plan", "IBS diet", "USA")
     article = result["optimized_article_markdown"]
     has_devanagari = any("\u0900" <= ch <= "\u097F" for ch in article)
     assert not has_devanagari
 
 
 def test_mock_result_hindi_has_translated_ctas_and_faqs():
-    result = _mock_result("IBS diet plan", "IBS diet", "India", language="hi")
+    result = mock_result("IBS diet plan", "IBS diet", "India", language="hi")
     assert any("\u0900" <= ch <= "\u097F" for ch in result["cta_direct"])
     assert any("\u0900" <= ch <= "\u097F" for ch in result["cta_soft"])
     assert any("\u0900" <= ch <= "\u097F" for ch in result["faqs"][0]["question"])
@@ -59,7 +60,7 @@ def test_generate_endpoint_returns_variants():
 
 def test_safety_net_fills_missing_variants_from_primary():
     result = {"meta_description": "A short meta description about gut health topics."}
-    fixed = _ensure_meta_variants(result)
+    fixed = ensure_meta_variants(result)
     assert len(fixed["meta_description_variants"]) >= 1
     assert fixed["meta_description_variants"][0] == result["meta_description"]
 
@@ -73,20 +74,20 @@ def test_safety_net_preserves_good_variants():
             "Variant three, question-led: struggling with gut health issues today?",
         ],
     }
-    fixed = _ensure_meta_variants(dict(result))
+    fixed = ensure_meta_variants(dict(result))
     assert fixed["meta_description_variants"] == result["meta_description_variants"]
 
 
 def test_safety_net_handles_completely_empty_result():
     result = {}
-    fixed = _ensure_meta_variants(result)
+    fixed = ensure_meta_variants(result)
     assert isinstance(fixed["meta_description_variants"], list)
     assert len(fixed["meta_description_variants"]) >= 1
 
 
 def test_safety_net_filters_out_non_string_junk():
     result = {"meta_description": "Fallback description text for testing purposes only today.", "meta_description_variants": [123, None, "", "  "]}
-    fixed = _ensure_meta_variants(result)
+    fixed = ensure_meta_variants(result)
     assert all(isinstance(v, str) and v.strip() for v in fixed["meta_description_variants"])
 
 

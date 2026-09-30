@@ -16,7 +16,7 @@ def _base_result(**overrides):
 def test_good_article_scores_high():
     result = _base_result()
     result["optimized_article_markdown"] = "# IBS Diet Plan\n\nibs diet " + ("word " * 1200) + "\n\n*Medical Disclaimer: consult a doctor.*"
-    result["meta_description"] = "Learn about ibs diet with our complete guide covering symptoms diet and management options today." 
+    result["meta_description"] = "Learn about ibs diet with our complete guide covering symptoms diet and management options today."
     q = assess_quality(result, "IBS diet plan", "ibs diet", "supporting")
     assert q["score"] >= 70
     assert q["word_count"] > 1000

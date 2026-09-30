@@ -52,7 +52,9 @@ def assess_quality(result: dict, topic: str, primary_keyword: str, article_type:
     word_count = len(article_md.split())
     target_min, target_max = WORD_TARGETS.get(article_type, WORD_TARGETS["supporting"])
     if word_count < target_min * 0.6:
-        flags.append(f"Word count ({word_count}) is far below the {target_min}-{target_max} target for '{article_type}'.")
+        flags.append(
+            f"Word count ({word_count}) is far below the {target_min}-{target_max} target for '{article_type}'."
+        )
         score -= 25
     elif word_count < target_min:
         flags.append(f"Word count ({word_count}) is below the {target_min}-{target_max} target for '{article_type}'.")
@@ -72,7 +74,10 @@ def assess_quality(result: dict, topic: str, primary_keyword: str, article_type:
     else:
         bad_length = [v for v in variants if not (100 <= len(v) <= 170)]
         if bad_length:
-            flags.append(f"{len(bad_length)} of {len(variants)} meta description variants are outside the ~120-160 character range.")
+            flags.append(
+                f"{len(bad_length)} of {len(variants)} meta description variants are outside "
+                "the ~120-160 character range."
+            )
             score -= 3
 
     if kw:

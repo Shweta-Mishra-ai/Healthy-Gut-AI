@@ -1,17 +1,22 @@
 import logging
+import time
 
 from fastapi import APIRouter
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 
 from app.constants import STATIC_DIR
 from app.dashboard import tracker
+from app.language import check_language
+from app.pipeline import enrich_article
+from app.postprocess import ensure_disclaimer
 from app.review import (
     InvalidTransitionError,
     ReviewNotFoundError,
     ReviewStatus,
+    request_for_review,
     review_store,
 )
-from app.schemas import ReviewActionRequest
+from app.schemas import ReviewActionRequest, ReviewEditRequest
 
 logger = logging.getLogger("gutfolio.review")
 router = APIRouter()
@@ -79,6 +84,55 @@ def review_reject(article_id: str, payload: ReviewActionRequest):
         return JSONResponse(status_code=404, content={"error": str(e)})
     except InvalidTransitionError as e:
         return JSONResponse(status_code=409, content={"error": str(e)})
+
+
+@router.post("/review/{article_id}/edit")
+def review_edit(article_id: str, payload: ReviewEditRequest):
+    """A reviewer's correction to a draft. Previously the only way to fix a
+    compliance blocker or a wrong sentence was to reject the article and
+    regenerate, losing everything that was right about it.
+
+    The edited text is scored exactly like a generated article (metrics,
+    compliance, quality, SEO pack, duplicate scan). The medical disclaimer
+    is re-added if the edit removed it — the same guarantee every generated
+    article carries."""
+    try:
+        item = review_store.get(article_id)
+    except ReviewNotFoundError as e:
+        return JSONResponse(status_code=404, content={"error": str(e)})
+    if item["status"] != ReviewStatus.draft.value:
+        return JSONResponse(status_code=409, content={
+            "error": f"Article '{article_id}' is already '{item['status']}' — only drafts can be edited."
+        })
+
+    req = request_for_review(item)
+    language = req.language.value
+    article = dict(item["article"])
+    markdown = ensure_disclaimer(payload.article_markdown, language)
+    article["optimized_article_markdown"] = markdown
+    article["language_check"] = check_language(markdown, language)
+
+    if payload.meta_description is not None and payload.meta_description != article.get("meta_description"):
+        previous = article.get("meta_description")
+        article["meta_description"] = payload.meta_description
+        others = [v for v in article.get("meta_description_variants") or [] if v and v != previous]
+        article["meta_description_variants"] = [payload.meta_description, *others][:3]
+
+    article = enrich_article(article, req, review_id=article_id)
+    article["edits"] = [*(article.get("edits") or []), {
+        "at": time.time(),
+        "editor": payload.editor_name or None,
+        "word_count": article["metrics"]["wordCount"],
+    }]
+
+    try:
+        updated = review_store.update_article(article_id, article)
+    except ReviewNotFoundError as e:
+        return JSONResponse(status_code=404, content={"error": str(e)})
+    except InvalidTransitionError as e:
+        return JSONResponse(status_code=409, content={"error": str(e)})
+    logger.info("Article %s edited%s", article_id, f" by {payload.editor_name}" if payload.editor_name else "")
+    return updated
 
 
 @router.get("/review", response_class=HTMLResponse)

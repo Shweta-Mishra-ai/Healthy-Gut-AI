@@ -48,6 +48,7 @@ demo usually is:
 | **Length compliance** | Prompts use per-section word budgets (not a single vague target) for reliable pillar/supporting length adherence; actual word count is surfaced in every response |
 | **Quality scoring** | Every article gets a programmatic 0-100 score with specific flags (word count vs. target, keyword placement, meta description length, slug format, FAQ count, readability band, disclaimer presence, **language-script purity for non-English requests**) — not a self-reported LLM claim |
 | **Human review** | Every article starts as a `draft`; a reviewer must explicitly approve or reject it (`/review` page) before it's considered publish-ready — no article ships without a human checking the medical framing |
+| **Reviewer edits & feedback** | A reviewer can correct a draft in place (re-scored like a fresh article, disclaimer guaranteed), or reject it with a note that is handed to the writer when the topic is regenerated |
 | **Reviewer credential badge** | Approving an article can optionally attach a reviewer name + credential (e.g. "Dr. Anita Rao, MBBS, RMP") — self-attested, stored, shown in the review queue, and appended to the article when publishing to WordPress |
 | **High Load & Memory GC** | SQLite WAL mode + busy timeout pragmas, bounded TTL cache, and automatic stale IP key cleanup to prevent memory leaks under 5,000+ requests |
 | **Internal linking** | Every new article gets TF-IDF-ranked suggestions to link to previously **approved** articles (`internal_link_suggestions`), for SEO cluster building |
@@ -58,7 +59,7 @@ demo usually is:
 | **Caching** | In-memory TTL cache with active expired key purging — identical requests skip the LLM call entirely |
 | **Security & UI** | DOMPurify-sanitized markdown rendering, glassmorphism cards, Google Fonts (`Inter` & `Outfit`), dark/light theme toggle, toast notifications, outline previewer, and copy alerts |
 | **Localization** | English and Hindi article generation — native Devanagari rules eliminate language mixing; mock mode has a fully separate Hindi template; programmatic quality checks flag mixed-language output |
-| **RAG retrieval** | TF-IDF similarity search over a 24-topic curated gut-health knowledge base — real relevance ranking, not keyword lookup; `/rag/preview` exposes matches + scores |
+| **RAG retrieval** | TF-IDF similarity search over a 25-entry curated gut-health knowledge base (`app/rag/knowledge_base.json`) — real relevance ranking, not keyword lookup; `/rag/preview` exposes matches + scores |
 | **Export** | Download generated articles as `.docx`, `.pdf` (with smart quote & dash sanitization), `.md`, `.json`, or batch `.zip` |
 | **Quality metrics** | Flesch Reading Ease + keyword density on every article |
 | **SEO metadata** | Meta description (3 A/B-testable variants — benefit-led, question-led, keyword-led), URL slug, FAQs, `schema.org` JSON-LD, dual CTAs |
@@ -227,7 +228,7 @@ Full reference in [`.env.example`](.env.example).
 | `CACHE_TTL_SECONDS` | No | `3600` | How long identical requests are served from cache |
 | `MAX_BATCH_SIZE` | No | `10` | Max items per `/generate/batch` call |
 | `BATCH_CONCURRENCY` | No | `3` | Concurrent LLM calls within a batch |
-| `API_KEY` | No | — | If set, requires `X-API-Key` header on `/generate*`, `/export/*`, `/debug` |
+| `API_KEY` | No | — | If set, requires `X-API-Key` header on `/generate*`, `/export/*`, `/articles/*`, `/review/*` API, `/dashboard/stats`, `/publish/*`, `/debug` |
 | `DATABASE_PATH` | No | `gutfolio.db` | SQLite file for review history + dashboard data |
 | `WORDPRESS_URL` | No | — | WordPress site URL for publishing (e.g. `https://yoursite.com`) |
 | `WORDPRESS_USERNAME` | No | — | WordPress username (existing account) |
@@ -257,20 +258,23 @@ Full reference in [`.env.example`](.env.example).
 | `GET` | `/debug` | Lists all registered routes |
 | `GET` | `/rag/preview?topic=...&keyword=...` | Shows which knowledge-base chunks are retrieved for a query, with similarity scores |
 | `GET` | `/outline?topic=...&keyword=...&article_type=...` | Deterministic outline preview (no LLM call) — planned sections, word budgets, scope check, grounding sources |
-| `POST` | `/export/markdown` | Generate (or reuse cache) and return raw `.md` |
-| `POST` | `/export/json` | Generate (or reuse cache) and return the full result object as `.json` |
+| `GET` | `/articles/{id}/export/{markdown\|json\|docx\|pdf}` | Export the **stored** article by review id — exactly what was reviewed, including edits and the reviewer badge. No generation. Used by the UI. |
+| `POST` | `/articles/export/zip` | ZIP of stored articles by id (`{"ids": [...]}`): `.docx` per article + `batch_summary.csv` |
+| `POST` | `/export/markdown` | API: generate (or reuse cache) from a request body and return raw `.md` |
+| `POST` | `/export/json` | API: generate (or reuse cache) and return the full result object as `.json` |
 | `GET` | `/dashboard` | HTML dashboard — generation history, quality trends, provider breakdown |
 | `GET` | `/dashboard/stats` | JSON dashboard data (same source as the HTML page) |
-| `GET` | `/review` | HTML review queue — approve/reject drafts |
+| `GET` | `/review` | HTML review queue — edit, approve/reject, regenerate with feedback, publish |
 | `GET` | `/review/counts` | Draft/approved/rejected counts |
 | `GET` | `/review/queue?status=draft` | List articles by review status |
 | `GET` | `/review/{id}` | Fetch one article's full review record |
 | `POST` | `/review/{id}/approve` | Approve a draft (one-way — 409 if already reviewed) |
-| `POST` | `/review/{id}/reject` | Reject a draft (one-way — 409 if already reviewed) |
+| `POST` | `/review/{id}/reject` | Reject a draft (one-way — 409 if already reviewed). The note is given to the writer on the next generation of the same topic + keyword |
+| `POST` | `/review/{id}/edit` | Replace a draft's body (and optionally meta description); re-scored like a fresh article, disclaimer re-added if removed. Drafts only (409 otherwise) |
 | `GET` | `/internal-links?topic=...&keyword=...` | Ad-hoc query for related **approved** articles to link to (SEO cluster building) |
 | `GET` | `/publish/wordpress/status` | Whether WordPress publishing is configured |
 | `POST` | `/publish/wordpress/test-connection` | Verifies configured WordPress credentials work |
-| `POST` | `/publish/wordpress/{id}?status=draft&dry_run=false` | Publishes an **approved** article to WordPress |
+| `POST` | `/publish/wordpress/{id}?status=draft&dry_run=false` | Publishes an **approved** article to WordPress; publishing again updates the same post |
 | `POST` | `/generate` | Generate one article |
 | `POST` | `/generate/batch` | Generate up to `MAX_BATCH_SIZE` articles concurrently |
 | `POST` | `/export/batch/zip` | Generate (or reuse cache for) a batch and return one ZIP: `.docx` per article + `batch_summary.csv` |
@@ -325,10 +329,11 @@ Full reference in [`.env.example`](.env.example).
 ## 🧪 Testing
 
 ```bash
-python -m pytest
+python -m pytest     # tests
+ruff check .         # lint (pip install ruff) — also enforced in CI
 ```
 
-150 tests across eighteen test modules (including cache, config, load, security, and export unit tests):
+The suite covers, among others:
 
 | Suite | Covers |
 |---|---|
@@ -350,8 +355,12 @@ python -m pytest
 | `tests/test_wordpress_publish.py` | WordPress publishing — mocked HTTP for success/auth-failure/connection-error/timeout, dry-run mode, approved-only rule |
 | `tests/test_api.py` | Full request lifecycle in mock mode — health, generation, caching, batching, rate limiting |
 | `tests/test_stress.py` | High concurrency stress testing across database writes and memory limits |
+| `tests/test_article_exports.py` | Export by review id — stored text, reviewer badge, no regeneration, ZIP, Hindi filenames |
+| `tests/test_review_edit.py` | Reviewer edits — re-scoring, disclaimer guarantee, drafts-only, cache/export consistency |
+| `tests/test_reviewer_feedback.py` | Rejection note reaches the next generation's prompt (and reports when the template can't use it) |
+| `tests/test_kb_csp_mock.py` | Knowledge-base JSON validation, Content-Security-Policy on app pages, template article content |
 
-CI (`.github/workflows/ci.yml`) runs the full suite on Python 3.11 and 3.12 on every push and pull request.
+CI (`.github/workflows/ci.yml`) runs `ruff check` and the full suite on Python 3.11 and 3.12 on every push and pull request.
 
 ---
 
@@ -363,13 +372,18 @@ Healthy-Gut-AI/
 │   ├── main.py            # App assembly: middleware, exception handlers, health/debug/root, router registration
 │   ├── routers/
 │   │   ├── generation.py    # /generate, /generate/batch, /export/*
+│   │   ├── articles.py      # /articles/{id}/export/*, /articles/export/zip (stored articles)
 │   │   ├── discovery.py     # /rag/preview, /outline, /internal-links
-│   │   ├── review.py        # /review*, /dashboard* (draft/approve/reject workflow)
+│   │   ├── review.py        # /review*, /dashboard* (draft/edit/approve/reject workflow)
 │   │   └── publish.py       # /publish/wordpress*
 │   ├── constants.py        # Shared constants (STATIC_DIR, OUT_OF_SCOPE_MESSAGE)
 │   ├── config.py          # Environment-driven settings
 │   ├── schemas.py          # Pydantic request/response models
 │   ├── llm_providers.py    # Groq → OpenRouter → OpenAI → Mock fallback chain
+│   ├── prompts.py          # Draft + SEO/JSON prompts (English, Hindi), reviewer-feedback block
+│   ├── postprocess.py      # JSON extraction, validation, disclaimer/meta/sources safety nets
+│   ├── mock_content.py     # Template article built from retrieved knowledge-base chunks
+│   ├── pipeline.py         # Scoring shared by generation and reviewer edits
 │   ├── metrics.py          # Readability + keyword density
 │   ├── cache.py             # In-memory TTL cache with expired key purging
 │   ├── rate_limit.py        # In-memory sliding-window limiter with stale IP key cleanup
@@ -381,17 +395,18 @@ Healthy-Gut-AI/
 │   ├── internal_linking.py  # TF-IDF-ranked internal link suggestions over approved articles
 │   ├── cms_wordpress.py     # Optional WordPress REST API publishing
 │   └── rag/
-│       ├── knowledge_base.py  # 24-topic curated gut-health corpus
+│       ├── knowledge_base.json # Curated gut-health corpus (25 entries) — edit this to add topics
+│       ├── knowledge_base.py   # Loads + validates the JSON corpus
 │       └── retriever.py       # TF-IDF similarity retrieval
 ├── api/
 │   └── index.py             # Mangum wrapper for Vercel/AWS Lambda
 ├── static/                  # Frontend (HTML/CSS/JS with Glassmorphism, Theme Switcher, Toasts)
-├── tests/                   # pytest suite (150 passing tests)
+├── tests/                   # pytest suite
 ├── docs/
 │   ├── architecture.svg     # Full pipeline diagram
 │   └── pipeline-flow.gif    # Animated request-lifecycle illustration
 ├── prompts/                 # Reference prompt templates
-├── pyproject.toml           # Pytest pythonpath configuration
+├── pyproject.toml           # pytest + ruff configuration
 ├── .github/workflows/ci.yml
 ├── requirements.txt
 ├── Procfile                 # Railway deployment
