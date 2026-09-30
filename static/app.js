@@ -417,6 +417,9 @@ async function runStreamingBatch(requests) {
     if (!res.ok) {
         let data = {};
         try { data = await res.json(); } catch { /* non-JSON error body */ }
+        // Nothing was started, so rows reading "queued / waiting" next to the
+        // error would claim work is still pending.
+        document.getElementById('batch-progress').classList.add('hidden');
         showError(formatError(res.status, data));
         return null;
     }
@@ -427,7 +430,17 @@ async function runStreamingBatch(requests) {
     let completed = 0;
 
     while (true) {
-        const { value, done } = await reader.read();
+        let chunk;
+        try {
+            chunk = await reader.read();
+        } catch {
+            // The connection dropped mid-stream (network, proxy timeout).
+            // Articles that already arrived are real and saved server-side —
+            // keep them instead of discarding the whole batch.
+            showError(`Connection lost after ${completed} of ${requests.length} articles. Finished articles are shown below; re-run the rest.`);
+            break;
+        }
+        const { value, done } = chunk;
         if (done) break;
         buffer += decoder.decode(value, { stream: true });
         const lines = buffer.split('\n');
@@ -445,6 +458,12 @@ async function runStreamingBatch(requests) {
             }
         }
     }
+    results.forEach((r, i) => {
+        if (r === null) {
+            results[i] = { error: 'Did not finish — the connection closed before this article arrived.' };
+            updateBatchRow(i, requests[i].topic, results[i]);
+        }
+    });
     return results;
 }
 

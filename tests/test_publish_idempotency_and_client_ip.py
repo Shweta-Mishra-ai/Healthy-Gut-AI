@@ -117,3 +117,9 @@ def test_last_mode_ignores_a_spoofed_leftmost_entry_for_rate_limiting():
 def test_pages_declare_a_favicon():
     for path in ("/", "/review", "/dashboard"):
         assert 'rel="icon"' in client.get(path).text
+
+
+def test_dashboard_marks_out_of_scope_rows_separately_from_failures():
+    client.post("/generate", json={"topic": "Quantum computing basics", "primary_keyword": "qubits", "geo_target": "India"})
+    recent = client.get("/dashboard/stats").json()["recent"]
+    assert recent[0]["success"] is False and recent[0]["out_of_scope"] is True
