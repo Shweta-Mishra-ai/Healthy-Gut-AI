@@ -3,9 +3,10 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Gutfolio | Review Queue</title>
+<title>Healthy Gut | Review Queue</title>
 <meta name="robots" content="noindex">
 <link rel="stylesheet" href="/static/style.css">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Crect width=%2732%27 height=%2732%27 rx=%277%27 fill=%27%233f6f5c%27/%3E%3Ccircle cx=%2715%27 cy=%2715%27 r=%277%27 fill=%27none%27 stroke=%27white%27 stroke-width=%272.5%27/%3E%3Ccircle cx=%2721%27 cy=%2721%27 r=%273.5%27 fill=%27white%27/%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Work+Sans:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
@@ -131,7 +132,8 @@ ${status === 'draft' ? `
 <button type="button" class="btn-action reject" data-action="reject" data-id="${esc(item.id)}">Reject</button>` : ''}
 ${status === 'approved' ? `
 <button type="button" class="btn-secondary" data-publish="${esc(item.id)}" data-dry="true">Dry run to WordPress</button>
-<button type="button" class="btn-primary btn-inline" data-publish="${esc(item.id)}" data-dry="false">Publish to WordPress</button>` : ''}
+<button type="button" class="btn-primary btn-inline" data-publish="${esc(item.id)}" data-dry="false">${item.wp_post_id ? 'Update WordPress post' : 'Publish to WordPress'}</button>` : ''}
+${/^https?:\/\//i.test(item.wp_post_url || '') ? `<a class="muted small" href="${esc(item.wp_post_url)}" target="_blank" rel="noopener noreferrer">Open WordPress post</a>` : ''}
 </div>
 <div id="wp-result-${esc(item.id)}" class="hidden" style="margin-top:0.75rem; font-size:0.88rem;"></div>
 <div id="article-body-${esc(item.id)}" class="hidden article-content" style="margin-top:1rem;"></div>
@@ -218,11 +220,14 @@ async function publishToWordPress(id, dryRun, overrideCompliance = false) {
             return;
         }
         if (dryRun) {
-            resultEl.innerHTML = `<p>Dry run succeeded — would create the draft <strong>${esc(data.would_send?.title || '')}</strong>.</p>`;
+            const verb = data.updates_existing ? 'update the existing post' : 'create the draft';
+            resultEl.innerHTML = `<p>Dry run succeeded — would ${verb} <strong>${esc(data.would_send?.title || '')}</strong>.</p>`;
             Gutfolio.toast('WordPress dry run verified.', 'success');
         } else {
-            resultEl.innerHTML = `<p>Published as a WordPress draft. <a href="${esc(data.post_url || '#')}" target="_blank" rel="noopener noreferrer">Open the post</a></p>`;
-            Gutfolio.toast('Published to WordPress.', 'success');
+            const done = data.updated_existing ? 'Updated the existing WordPress post.' : 'Published as a WordPress draft.';
+            resultEl.innerHTML = `<p>${done} <a href="${esc(/^https?:\/\//i.test(data.post_url || '') ? data.post_url : '#')}" target="_blank" rel="noopener noreferrer">Open the post</a></p>`;
+            Gutfolio.toast(data.updated_existing ? 'WordPress post updated.' : 'Published to WordPress.', 'success');
+            await loadQueue(currentStatus);
         }
     } catch (err) {
         resultEl.innerHTML = `<div class="panel-note note-warn"><span>Connection error: ${esc(err.message)}</span></div>`;

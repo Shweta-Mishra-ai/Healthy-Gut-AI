@@ -5,7 +5,12 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 
 from app.constants import STATIC_DIR
 from app.dashboard import tracker
-from app.review import InvalidTransitionError, ReviewNotFoundError, ReviewStatus, review_store
+from app.review import (
+    InvalidTransitionError,
+    ReviewNotFoundError,
+    ReviewStatus,
+    review_store,
+)
 from app.schemas import ReviewActionRequest
 
 logger = logging.getLogger("gutfolio.review")

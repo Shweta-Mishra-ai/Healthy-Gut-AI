@@ -16,7 +16,8 @@ from app.config import settings
 from app.constants import STATIC_DIR
 from app.rate_limit import rate_limiter
 from app.review import review_store
-from app.routers import discovery, generation, publish, review as review_router
+from app.routers import discovery, generation, publish
+from app.routers import review as review_router
 
 logging.basicConfig(
     level=os.getenv("LOG_LEVEL", "INFO"),
@@ -24,7 +25,10 @@ logging.basicConfig(
 )
 logger = logging.getLogger("gutfolio")
 
-app = FastAPI(title="Gutfolio", version="2.0.0")
+if settings.CLIENT_IP_MODE not in ("first", "last", "peer"):
+    raise ValueError(f"CLIENT_IP_MODE must be 'first', 'last' or 'peer', got {settings.CLIENT_IP_MODE!r}")
+
+app = FastAPI(title="Healthy Gut", version="2.0.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -38,10 +42,14 @@ app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
 def client_key(request: Request) -> str:
-    fwd = request.headers.get("x-forwarded-for")
-    if fwd:
-        return fwd.split(",")[0].strip()
-    return request.client.host if request.client else "unknown"
+    peer = request.client.host if request.client else "unknown"
+    mode = settings.CLIENT_IP_MODE
+    if mode == "peer":
+        return peer
+    hops = [h.strip() for h in request.headers.get("x-forwarded-for", "").split(",") if h.strip()]
+    if not hops:
+        return peer
+    return hops[-1] if mode == "last" else hops[0]
 
 
 PROTECTED_PATH_PREFIXES = (
@@ -190,6 +198,20 @@ def debug():
     return {"routes": sorted(_all_route_paths(app.routes))}
 
 
+@app.get("/debug/client-ip")
+def debug_client_ip(request: Request):
+    """Shows what the rate limiter keys this request on. Send a fake
+    X-Forwarded-For through the real deployment: if rate_limit_key echoes the
+    fake value back, clients can dodge the limit, and CLIENT_IP_MODE needs
+    changing."""
+    return {
+        "client_ip_mode": settings.CLIENT_IP_MODE,
+        "x_forwarded_for": request.headers.get("x-forwarded-for"),
+        "peer": request.client.host if request.client else None,
+        "rate_limit_key": client_key(request),
+    }
+
+
 @app.get("/", response_class=HTMLResponse)
 def root():
     return FileResponse(os.path.join(STATIC_DIR, "index.html"))
@@ -203,4 +225,7 @@ app.include_router(publish.router)
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("app.main:app", host="0.0.0.0", port=int(os.getenv("PORT", 8000)))
+    # host="0.0.0.0" is required for container platforms (Render/Docker) to
+    # route external traffic in — 127.0.0.1 would make the app unreachable
+    # from outside the container. Explicit entrypoint, not a hidden default.
+    uvicorn.run("app.main:app", host="0.0.0.0", port=int(os.getenv("PORT", "8000")))  # nosec B104

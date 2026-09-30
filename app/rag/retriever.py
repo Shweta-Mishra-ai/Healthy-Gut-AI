@@ -94,6 +94,7 @@ _GUT_HEALTH_TERMS = (
     "fodmap", "fiber", "fibre", "diarrhea", "diarrhoea", "constipation", "bloat",
     "gastritis", "diverticul", "crohn", "colitis", "lactose", "gluten", "fermented",
     "gastro", "colon", "rectal", "flatulence", "abdominal", "nausea", "ulcer",
+    "pylori", "helicobacter", "peptic", "dyspepsia", "indigestion",
 )
 
 # Hindi/Devanagari equivalents — the topic/keyword fields are free text, and
@@ -108,7 +109,7 @@ _GUT_HEALTH_TERMS_HI = (
     "गट", "पाचन", "आंत", "आंतों", "पेट", "कब्ज", "दस्त", "अपच", "गैस", "सूजन", "ब्लोटिंग",
     "एसिडिटी", "सीने में जलन", "आईबीएस", "आईबीडी", "सीलिएक", "ग्लूटेन", "लैक्टोज़", "लैक्टोस",
     "प्रोबायोटिक", "प्रीबायोटिक", "फाइबर", "माइक्रोबायोम", "कोलाइटिस", "क्रोन", "अल्सर",
-    "मरोड़", "बवासीर", "अफारा", "जठर",
+    "मरोड़", "बवासीर", "अफारा", "जठर", "पाइलोरी", "पेप्टिक",
 )
 
 

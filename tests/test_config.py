@@ -16,3 +16,16 @@ def test_settings_load_env(monkeypatch):
         monkeypatch.undo()
         importlib.reload(app.config)
 
+
+
+def test_default_groq_model_is_not_the_decommissioned_one(monkeypatch):
+    """llama-3.3-70b-versatile was decommissioned by Groq on Aug 16, 2026;
+    with it as the default every call fails and the app silently serves
+    template content."""
+    monkeypatch.delenv("GROQ_MODEL", raising=False)
+    importlib.reload(app.config)
+    try:
+        assert app.config.Settings().GROQ_MODEL == "openai/gpt-oss-120b"
+    finally:
+        monkeypatch.undo()
+        importlib.reload(app.config)

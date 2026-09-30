@@ -1,6 +1,6 @@
-# Contributing to Gutfolio
+# Contributing to Healthy Gut
 
-Thanks for considering a contribution to **Gutfolio**. We welcome small, focused pull requests that maintain high code quality, test coverage, and performance.
+Thanks for considering a contribution to **Healthy Gut**. We welcome small, focused pull requests that maintain high code quality, test coverage, and performance.
 
 ## Ground Rules
 
@@ -13,7 +13,7 @@ Thanks for considering a contribution to **Gutfolio**. We welcome small, focused
 
 ```bash
 git clone https://github.com/Shweta-Mishra-ai/Healthy-Gut-AI.git
-cd Healthy-Gut-AI/hga
+cd Healthy-Gut-AI
 python -m venv venv
 source venv/bin/activate        # Windows: venv\Scripts\activate
 pip install -r requirements.txt

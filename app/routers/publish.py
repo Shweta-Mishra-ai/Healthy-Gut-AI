@@ -1,3 +1,6 @@
+import threading
+from collections import defaultdict
+
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 
@@ -8,6 +11,16 @@ from app.config import settings
 from app.review import ReviewNotFoundError, ReviewStatus, review_store
 
 router = APIRouter()
+
+# One lock per article: a double-click on "Publish" sends two requests that
+# would both see "no post yet" and create two WordPress posts.
+_publish_locks: dict[str, threading.Lock] = defaultdict(threading.Lock)
+_publish_locks_guard = threading.Lock()
+
+
+def _lock_for(article_id: str) -> threading.Lock:
+    with _publish_locks_guard:
+        return _publish_locks[article_id]
 
 
 @router.get("/publish/wordpress/status")
@@ -62,14 +75,21 @@ def wordpress_publish(article_id: str, status: str = "draft", dry_run: bool = Fa
         # stood behind this content, not just an anonymous "AI-generated" tag.
         article_markdown = f"{article_markdown.rstrip()}\n\n---\n*{item['reviewer_badge']}*"
 
-    result = wp_publish_post(
-        title=item["topic"],
-        article_markdown=article_markdown,
-        excerpt=article.get("meta_description", ""),
-        slug=article.get("url_slug", ""),
-        status=status,
-        dry_run=dry_run,
-    )
-    if not result["success"]:
-        return JSONResponse(status_code=502, content=result)
+    with _lock_for(article_id):
+        # Re-read inside the lock so a concurrent publish that just finished
+        # is seen, and this one updates its post rather than making another.
+        existing_post_id = review_store.get(article_id).get("wp_post_id")
+        result = wp_publish_post(
+            title=item["topic"],
+            article_markdown=article_markdown,
+            excerpt=article.get("meta_description", ""),
+            slug=article.get("url_slug", ""),
+            status=status,
+            dry_run=dry_run,
+            post_id=existing_post_id,
+        )
+        if not result["success"]:
+            return JSONResponse(status_code=502, content=result)
+        if not dry_run and result.get("post_id") is not None:
+            review_store.record_wordpress_post(article_id, result["post_id"], result.get("post_url"))
     return result

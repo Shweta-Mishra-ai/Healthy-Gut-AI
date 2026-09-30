@@ -67,6 +67,7 @@ class GenerationTracker:
             "recent": [
                 {
                     "topic": e["topic"], "provider": e["provider"], "success": e["success"],
+                    "out_of_scope": e["out_of_scope"],
                     "quality_score": e["quality_score"], "word_count": e["word_count"], "cached": e["cached"],
                 }
                 for e in recent

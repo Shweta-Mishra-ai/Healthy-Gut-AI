@@ -1,5 +1,5 @@
 
-You are an SEO specialist and AI answer-engine optimization expert. You will refine an existing article for Gutfolio.
+You are an SEO specialist and AI answer-engine optimization expert. You will refine an existing article for Healthy Gut.
 
 ARTICLE TO OPTIMIZE:
 {{article_markdown}}
@@ -28,9 +28,9 @@ TASKS:
    - Each FAQ should be a pair: question + answer.
    - At least one FAQ must be geo-specific for {{geo_target}}.
 
-7. Add a section titled "How Gutfolio Helps" that:
+7. Add a section titled "How Healthy Gut Helps" that:
    - Explains features like personalized diet suggestions, symptom tracking, and doctor-ready reports.
-   - Naturally encourages readers to try Gutfolio.
+   - Naturally encourages readers to try Healthy Gut.
 
 8. Add TWO call-to-action variants:
    - "cta_soft": educational, low pressure.
@@ -39,7 +39,7 @@ TASKS:
 9. Create a JSON-LD Article schema (valid JSON) including:
    - headline
    - description (use the meta description)
-   - author: "Gutfolio"
+   - author: "Healthy Gut"
    - articleSection
    - mainEntityOfPage
    - about: medical condition

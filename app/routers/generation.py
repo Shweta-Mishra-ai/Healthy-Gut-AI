@@ -1,6 +1,8 @@
 import asyncio
 import json
 import logging
+import re
+from urllib.parse import quote
 
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse, Response, StreamingResponse
@@ -10,7 +12,12 @@ from app.compliance import scan_article
 from app.config import settings
 from app.constants import OUT_OF_SCOPE_MESSAGE
 from app.dashboard import tracker
-from app.export import FontUnavailableError, build_batch_zip, markdown_to_docx_bytes, markdown_to_pdf_bytes
+from app.export import (
+    FontUnavailableError,
+    build_batch_zip,
+    markdown_to_docx_bytes,
+    markdown_to_pdf_bytes,
+)
 from app.internal_linking import find_related_articles
 from app.llm_providers import llm_generate
 from app.metrics import keyword_density, readability
@@ -23,6 +30,20 @@ from app.similarity import check_duplication, duplication_summary
 
 logger = logging.getLogger("gutfolio.generation")
 router = APIRouter()
+
+
+def _content_disposition(topic: str, ext: str) -> str:
+    """Attachment header safe for any topic. Starlette encodes headers as
+    latin-1, so a Hindi topic interpolated raw raised UnicodeEncodeError and
+    every export for a Devanagari topic came back as a bare 500; a `"` in
+    the topic also terminated the quoted filename early. The ASCII
+    `filename` is the fallback for old clients, and RFC 5987 `filename*`
+    carries the real, percent-encoded UTF-8 name."""
+    # Only separators and characters that are unsafe in a filename are
+    # replaced — `\w` would also split Devanagari words at every vowel sign.
+    stem = re.sub(r'[\s/\\:*?"<>|\x00-\x1f]+', "-", topic.lower()).strip("-.") or "article"
+    ascii_stem = re.sub(r"[^a-z0-9]+", "-", stem.encode("ascii", "ignore").decode()).strip("-") or "article"
+    return f'attachment; filename="{ascii_stem}.{ext}"; filename*=UTF-8\'\'{quote(stem)}.{ext}'
 
 
 def _enrich(result: dict, req: GenerateRequest, review_id: str = None) -> dict:
@@ -60,19 +81,27 @@ async def _generate_one(req: GenerateRequest) -> dict:
 
     cache_key = article_cache.make_key(req.topic, req.primary_keyword, req.geo_target, req.article_type.value, req.language.value, req.tone.value)
     cached = article_cache.get(cache_key)
+    review_status = None
+    if cached and cached.get("review_id"):
+        try:
+            review_status = review_store.get(cached["review_id"])["status"]
+        except ReviewNotFoundError:
+            pass
+    if review_status == ReviewStatus.rejected.value:
+        # A reviewer turned this article down. Serving it again from cache
+        # handed the same rejected text back (still labelled "draft") for the
+        # rest of the TTL, so "regenerate after rejection" was impossible.
+        cached = None
     if cached:
         result = dict(cached)
         result["cached"] = True
 
         review_id = result.get("review_id")
-        review_still_exists = False
-        if review_id:
-            try:
-                review_store.get(review_id)
-                review_still_exists = True
-            except ReviewNotFoundError:
-                pass
-        if not review_still_exists:
+        if review_status is not None:
+            # The cached copy froze review_status at "draft"; report the
+            # article's real state now that a reviewer may have approved it.
+            result["review_status"] = review_status
+        else:
             # The cached content is still valid, but its review-workflow entry
             # is gone (evicted from the review store, or storage was reset) —
             # re-register it as a fresh draft rather than handing back a
@@ -110,7 +139,12 @@ async def _generate_one(req: GenerateRequest) -> dict:
 
     result = _enrich(result, req)
     result["cached"] = False
-    article_cache.set(cache_key, result)
+    if not result.get("provider_note"):
+        # provider_note means real providers are configured but every one of
+        # them failed and template content was served instead. Caching that
+        # pinned the template to this topic for the whole TTL, even after the
+        # provider recovered (or the decommissioned model was replaced).
+        article_cache.set(cache_key, result)
     review_id = review_store.register(result, req.topic, req.primary_keyword)
     result["review_id"] = review_id
     result["review_status"] = ReviewStatus.draft.value
@@ -253,7 +287,7 @@ async def export_batch_zip(payload: BatchGenerateRequest):
     return Response(
         content=zip_bytes,
         media_type="application/zip",
-        headers={"Content-Disposition": 'attachment; filename="gutfolio-batch.zip"'},
+        headers={"Content-Disposition": 'attachment; filename="healthy-gut-batch.zip"'},
     )
 
 
@@ -272,11 +306,11 @@ async def export_markdown(payload: GenerateRequest):
     blocked = _export_guard(result)
     if blocked:
         return blocked
-    filename = f"{payload.topic.lower().replace(' ', '-')}.md"
+    disposition = _content_disposition(payload.topic, "md")
     return Response(
         content=result.get("optimized_article_markdown", ""),
         media_type="text/markdown; charset=utf-8",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        headers={"Content-Disposition": disposition},
     )
 
 
@@ -286,11 +320,11 @@ async def export_json(payload: GenerateRequest):
     blocked = _export_guard(result)
     if blocked:
         return blocked
-    filename = f"{payload.topic.lower().replace(' ', '-')}.json"
+    disposition = _content_disposition(payload.topic, "json")
     return Response(
         content=json.dumps(result, indent=2, ensure_ascii=False),
         media_type="application/json; charset=utf-8",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        headers={"Content-Disposition": disposition},
     )
 
 
@@ -301,11 +335,11 @@ async def export_docx(payload: GenerateRequest):
     if blocked:
         return blocked
     data = markdown_to_docx_bytes(payload.topic, result.get("optimized_article_markdown", ""))
-    filename = f"{payload.topic.lower().replace(' ', '-')}.docx"
+    disposition = _content_disposition(payload.topic, "docx")
     return Response(
         content=data,
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        headers={"Content-Disposition": disposition},
     )
 
 
@@ -320,9 +354,9 @@ async def export_pdf(payload: GenerateRequest):
     except FontUnavailableError as e:
         # Surfaced as a real error rather than a 200 with a blank PDF.
         return JSONResponse(status_code=503, content={"error": str(e), "export_format": "pdf"})
-    filename = f"{payload.topic.lower().replace(' ', '-')}.pdf"
+    disposition = _content_disposition(payload.topic, "pdf")
     return Response(
         content=data,
         media_type="application/pdf",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        headers={"Content-Disposition": disposition},
     )

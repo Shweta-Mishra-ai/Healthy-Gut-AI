@@ -96,10 +96,14 @@ def _markdown_to_basic_html(markdown_text: str) -> str:
 
 
 def publish_post(*, title: str, article_markdown: str, excerpt: str = "", slug: str = "",
-                  status: str = "draft", dry_run: bool = False) -> dict:
+                  status: str = "draft", dry_run: bool = False, post_id: int | None = None) -> dict:
     """Publishes (or, if dry_run, simulates publishing) an article to
     WordPress as a post. status is 'draft' by default — 'publish' must be
-    explicitly requested by the caller, it is never the implicit default."""
+    explicitly requested by the caller, it is never the implicit default.
+
+    With post_id, the existing post is updated in place (WP REST
+    POST /posts/<id>) instead of a new one being created. If that post no
+    longer exists on the site (deleted in WP admin), a new one is created."""
     payload = {
         "title": title,
         "content": _markdown_to_basic_html(article_markdown),
@@ -109,24 +113,33 @@ def publish_post(*, title: str, article_markdown: str, excerpt: str = "", slug: 
     }
 
     if dry_run:
-        return {"success": True, "dry_run": True, "would_send": payload, "post_id": None, "post_url": None, "error": None}
+        return {"success": True, "dry_run": True, "would_send": payload, "post_id": post_id,
+                "post_url": None, "updates_existing": post_id is not None, "error": None}
 
     if not is_configured():
         return {"success": False, "error": "WordPress is not configured — set WORDPRESS_URL, WORDPRESS_USERNAME, WORDPRESS_APP_PASSWORD."}
 
     url = f"{settings.WORDPRESS_URL}/wp-json/wp/v2/posts"
+    if post_id is not None:
+        url = f"{url}/{int(post_id)}"
     try:
         resp = requests.post(url, auth=_auth(), json=payload, timeout=settings.WORDPRESS_TIMEOUT_SECONDS)
     except requests.exceptions.RequestException as e:
         logger.error("WordPress publish failed: %s", e)
         return {"success": False, "error": _friendly_error(e)}
 
+    if post_id is not None and resp.status_code in (404, 410):
+        logger.warning("WordPress post %s no longer exists; creating a new post instead", post_id)
+        return publish_post(title=title, article_markdown=article_markdown, excerpt=excerpt,
+                            slug=slug, status=status, dry_run=False, post_id=None)
+
     if resp.status_code in (200, 201):
         try:
             data = resp.json()
         except ValueError:
             return {"success": False, "error": "WordPress accepted the request but returned an unexpected (non-JSON) response."}
-        return {"success": True, "post_id": data.get("id"), "post_url": data.get("link"), "status": data.get("status"), "error": None}
+        return {"success": True, "post_id": data.get("id"), "post_url": data.get("link"), "status": data.get("status"),
+                "updated_existing": post_id is not None, "error": None}
 
     if resp.status_code in (401, 403):
         return {"success": False, "error": "Authentication failed — check WORDPRESS_USERNAME and WORDPRESS_APP_PASSWORD."}
