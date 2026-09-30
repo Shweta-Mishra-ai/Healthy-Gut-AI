@@ -24,6 +24,13 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
+      # Installed here rather than in requirements.txt, which is also the
+      # production build (Render) and doesn't need a linter.
+      - name: Lint (ruff)
+        run: |
+          pip install ruff==0.15.8
+          ruff check .
+
       - name: Run test suite
         run: python -m pytest tests/ -v
 

@@ -2,3 +2,25 @@
 pythonpath = ["."]
 testpaths = ["tests"]
 asyncio_mode = "strict"
+
+[tool.ruff]
+target-version = "py311"
+line-length = 120
+
+[tool.ruff.lint]
+# pyflakes, pycodestyle, import order, bugbear, pyupgrade
+select = ["F", "E", "W", "I", "B", "UP"]
+ignore = [
+    # `class X(str, Enum)` -> StrEnum changes str()/format() output
+    # ("Language.en" vs "en"), which is a behaviour change, not a style fix.
+    "UP042",
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Environment variables must be cleared before the app is imported.
+"tests/conftest.py" = ["E402"]
+# Prompt and template text: wrapping these lines would change the text sent
+# to the model or shown to readers. Test fixtures are long literal articles.
+"app/prompts.py" = ["E501"]
+"app/mock_content.py" = ["E501"]
+"tests/*" = ["E501"]

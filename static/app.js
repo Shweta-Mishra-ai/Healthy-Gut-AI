@@ -6,7 +6,9 @@ const state = {
     mode: 'single',
     lastRequests: [],
     lastSingleMarkdown: '',
+    lastSingleReviewId: null,
     batchMarkdowns: [],
+    batchReviewIds: [],
     lastPack: null,
 };
 
@@ -218,6 +220,15 @@ function providerNote(data) {
     return `<div class="panel-note note-warn"><span>${esc(data.provider_note)}</span></div>`;
 }
 
+function feedbackNote(data) {
+    const fb = data.reviewer_feedback;
+    if (!fb) return '';
+    const text = fb.applied
+        ? `Written with the reviewer's rejection note: “${fb.note}”`
+        : `A reviewer rejected the last draft (“${fb.note}”), but the offline template can't act on feedback — configure a provider.`;
+    return `<div class="panel-note ${fb.applied ? '' : 'note-warn'}"><span>${esc(text)}</span></div>`;
+}
+
 function languageNote(data) {
     const check = data.language_check;
     if (!check || check.ok) return '';
@@ -230,6 +241,7 @@ function resultShell(data, headerHTML) {
     return `
 ${headerHTML}
 ${providerNote(data)}
+${feedbackNote(data)}
 ${languageNote(data)}
 ${metricsBlock(data)}
 <div class="result-tabs">
@@ -251,6 +263,7 @@ ${metricsBlock(data)}
 function renderSingleResult(data) {
     const panel = document.getElementById('results');
     state.lastSingleMarkdown = data.optimized_article_markdown || '';
+    state.lastSingleReviewId = data.review_id || null;
     const providerBadge = data.cached ? 'Cached' : Gutfolio.providerLabel(data.provider_used);
 
     const header = `
@@ -344,6 +357,7 @@ function updateBatchRow(index, topic, result) {
 function renderBatchResults(results, requests) {
     const panel = document.getElementById('results');
     state.batchMarkdowns = results.map(r => (r && r.optimized_article_markdown) || '');
+    state.batchReviewIds = results.map(r => (r && !r.error && r.review_id) || null);
     const succeeded = results.filter(r => r && !r.error).length;
 
     const items = results.map((r, i) => {
@@ -563,12 +577,12 @@ document.getElementById('generate-form').addEventListener('submit', async (e) =>
 
 /* ---------- exports ---------- */
 
-async function downloadBlob(url, body, filename, label) {
-    const res = await Gutfolio.apiFetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-    });
+/* Downloads go by review id: the stored article is exactly what was shown
+   and reviewed (edits and sign-off included). Re-POSTing the generation
+   request, as before, regenerated the article once the cache had expired
+   and could hand back different text than the one on screen. */
+async function downloadBlob(url, options, filename, label) {
+    const res = await Gutfolio.apiFetch(url, options);
     if (!res.ok) {
         let data = {};
         try { data = await res.json(); } catch { /* binary or empty error body */ }
@@ -594,25 +608,43 @@ function safeFilename(topic, ext) {
     return `${stem || 'article'}.${ext}`;
 }
 
+async function downloadArticle(reviewId, topic, kind, ext) {
+    if (!reviewId) {
+        showError('This article has no saved copy to export.');
+        return;
+    }
+    await downloadBlob(
+        `/articles/${encodeURIComponent(reviewId)}/export/${kind}`,
+        { method: 'GET' },
+        safeFilename(topic, ext || kind),
+        (ext || kind).toUpperCase(),
+    );
+}
+
 async function downloadExport(kind, ext) {
-    const payload = state.lastRequests[0];
-    if (!payload) return;
-    await downloadBlob(`/export/${kind}`, payload, safeFilename(payload.topic, ext || kind), (ext || kind).toUpperCase());
+    await downloadArticle(state.lastSingleReviewId, state.lastRequests[0]?.topic, kind, ext);
 }
 
 async function downloadOneFromBatch(index, kind) {
-    const payload = state.lastRequests[index];
-    if (!payload) return;
-    await downloadBlob(`/export/${kind}`, payload, safeFilename(payload.topic, kind), kind.toUpperCase());
+    await downloadArticle(state.batchReviewIds[index], state.lastRequests[index]?.topic, kind);
 }
 
 async function downloadBatchZip() {
+    const ids = state.batchReviewIds.filter(Boolean);
+    if (!ids.length) {
+        showError('No finished articles to bundle.');
+        return;
+    }
     const btn = document.getElementById('download-zip-btn');
     const original = btn.textContent;
     btn.disabled = true;
     btn.textContent = 'Bundling...';
     try {
-        await downloadBlob('/export/batch/zip', { items: state.lastRequests }, 'healthy-gut-batch.zip', 'ZIP bundle');
+        await downloadBlob('/articles/export/zip', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ids }),
+        }, 'healthy-gut-batch.zip', 'ZIP bundle');
     } finally {
         btn.disabled = false;
         btn.textContent = original;

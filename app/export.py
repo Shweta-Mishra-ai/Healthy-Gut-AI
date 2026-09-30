@@ -4,6 +4,7 @@ import logging
 import os
 import re
 import zipfile
+from urllib.parse import quote
 
 logger = logging.getLogger("gutfolio.export")
 
@@ -24,6 +25,16 @@ def _strip_inline_markdown(text: str) -> str:
 def _split_table_row(line: str) -> list[str]:
     cells = line.strip().strip("|").split("|")
     return [_strip_inline_markdown(c.strip()) for c in cells]
+
+
+def _starts_block(stripped: str) -> bool:
+    return (
+        not stripped
+        or (stripped.startswith("|") and stripped.count("|") >= 2)
+        or bool(re.match(r"^(#{1,6})\s+", stripped))
+        or bool(re.match(r"^([-*+]|\d+\.)\s+", stripped))
+        or (set(stripped) <= {"-", "*", "_"} and len(stripped) >= 3)
+    )
 
 
 def _parse_blocks(markdown_text: str):
@@ -72,8 +83,15 @@ def _parse_blocks(markdown_text: str):
             i += 1  # horizontal rule
             continue
 
-        yield ("para", _strip_inline_markdown(stripped))
+        # Consecutive plain lines are one paragraph (markdown soft wraps).
+        # Emitting each line as its own paragraph split any wrapped
+        # paragraph into fragments in the DOCX/PDF output.
+        paragraph = [stripped]
         i += 1
+        while i < len(lines) and not _starts_block(lines[i].strip()):
+            paragraph.append(lines[i].strip())
+            i += 1
+        yield ("para", _strip_inline_markdown(" ".join(paragraph)))
 
 
 def markdown_to_docx_bytes(title: str, markdown_text: str) -> bytes:
@@ -234,9 +252,25 @@ def markdown_to_pdf_bytes(title: str, markdown_text: str) -> bytes:
     return bytes(out)
 
 
-def _safe_filename(text: str, fallback: str) -> str:
-    slug = re.sub(r"[^a-zA-Z0-9\-]+", "-", (text or fallback).strip().lower()).strip("-")
-    return slug or fallback
+def filename_stem(text: str, fallback: str = "article") -> str:
+    """Filename-safe stem that keeps non-Latin scripts. Only separators and
+    characters unsafe in a filename are replaced — `\\w` or an ASCII-only
+    class would split Devanagari words at every vowel sign or drop them,
+    which turned every Hindi article in a batch ZIP into article-N.docx."""
+    stem = re.sub(r'[\s/\\:*?"<>|\x00-\x1f]+', "-", (text or "").strip().lower()).strip("-.")
+    return stem or fallback
+
+
+def content_disposition(topic: str, ext: str) -> str:
+    """Attachment header safe for any topic. Starlette encodes headers as
+    latin-1, so a Hindi topic interpolated raw raised UnicodeEncodeError and
+    every export for a Devanagari topic came back as a bare 500; a `"` in
+    the topic also terminated the quoted filename early. The ASCII
+    `filename` is the fallback for old clients, and RFC 5987 `filename*`
+    carries the real, percent-encoded UTF-8 name."""
+    stem = filename_stem(topic)
+    ascii_stem = re.sub(r"[^a-z0-9]+", "-", stem.encode("ascii", "ignore").decode()).strip("-") or "article"
+    return f"attachment; filename=\"{ascii_stem}.{ext}\"; filename*=UTF-8''{quote(stem)}.{ext}"
 
 
 def build_batch_zip(items: list[dict]) -> bytes:
@@ -273,7 +307,7 @@ def build_batch_zip(items: list[dict]) -> bytes:
                 readability, density, quality_score, compliance, "",
             ])
 
-            base_name = _safe_filename(topic, f"article-{len(used_names) + 1}")
+            base_name = filename_stem(topic, f"article-{len(used_names) + 1}")
             filename = f"{base_name}.docx"
             n = 2
             while filename in used_names:

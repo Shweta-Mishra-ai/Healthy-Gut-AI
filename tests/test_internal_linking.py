@@ -2,7 +2,6 @@ from fastapi.testclient import TestClient
 
 from app.internal_linking import find_related_articles
 from app.main import app
-from app.review import ReviewStatus, review_store
 
 client = TestClient(app)
 

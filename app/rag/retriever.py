@@ -54,7 +54,7 @@ class Retriever:
             query_vec = self._vectorizer.transform([query])
             scores = cosine_similarity(query_vec, self._matrix)[0]
 
-        ranked = sorted(zip(scores, self._corpus), key=lambda pair: pair[0], reverse=True)
+        ranked = sorted(zip(scores, self._corpus, strict=True), key=lambda pair: pair[0], reverse=True)
         results = [
             {**chunk, "relevance_score": round(float(score), 4)}
             for score, chunk in ranked[:top_k]

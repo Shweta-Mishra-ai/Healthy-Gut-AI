@@ -14,7 +14,7 @@ Google's documentation recommends expressing multiple types for one URL.
 """
 
 import re
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 MAX_TITLE_TAG_CHARS = 60
 MAX_META_CHARS = 160
@@ -135,7 +135,7 @@ def build_structured_data(
     # by consumers rather than truncated, so cap it here.
     headline = headline[:110].rstrip()
     description = strip_markdown(result.get("meta_description", "")) or _lead_paragraph(article_md)[:MAX_META_CHARS]
-    now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    now = datetime.now(UTC).isoformat(timespec="seconds")
     word_count = len(article_md.split())
 
     article_node = {
@@ -188,7 +188,10 @@ def build_structured_data(
         "@id": f"{page_url}#breadcrumb",
         "itemListElement": [
             {"@type": "ListItem", "position": 1, "name": "Home", "item": base or "/"},
-            {"@type": "ListItem", "position": 2, "name": "Gut Health", "item": f"{base}/gut-health" if base else "/gut-health"},
+            {
+                "@type": "ListItem", "position": 2, "name": "Gut Health",
+                "item": f"{base}/gut-health" if base else "/gut-health",
+            },
             {"@type": "ListItem", "position": 3, "name": headline or topic, "item": page_url},
         ],
     })

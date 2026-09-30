@@ -13,7 +13,10 @@ import time
 import uuid
 from enum import Enum
 
+from pydantic import ValidationError
+
 from app.db import get_connection, get_lock
+from app.schemas import ArticleType, GenerateRequest, Language, Tone
 
 
 class ReviewStatus(str, Enum):
@@ -89,6 +92,45 @@ class ReviewStore:
             updated = conn.execute("SELECT * FROM reviews WHERE id = ?", (article_id,)).fetchone()
         return self._row_to_full_dict(updated)
 
+    def update_article(self, article_id: str, article: dict) -> dict:
+        """Replaces a draft's stored article (a reviewer edit). Re-checks the
+        status under the lock so an edit can't land on an article that was
+        approved or rejected while the edit was being scored."""
+        conn = get_connection()
+        with get_lock():
+            row = conn.execute("SELECT status FROM reviews WHERE id = ?", (article_id,)).fetchone()
+            if not row:
+                raise ReviewNotFoundError(f"No article found with id '{article_id}'")
+            if row["status"] != ReviewStatus.draft.value:
+                raise InvalidTransitionError(
+                    f"Article '{article_id}' is already '{row['status']}' — only drafts can be edited."
+                )
+            conn.execute(
+                "UPDATE reviews SET article_json = ?, quality_score = ?, word_count = ? WHERE id = ?",
+                (json.dumps(article, ensure_ascii=False), article.get("quality", {}).get("score"),
+                 article.get("metrics", {}).get("wordCount"), article_id),
+            )
+            conn.commit()
+            updated = conn.execute("SELECT * FROM reviews WHERE id = ?", (article_id,)).fetchone()
+        return self._row_to_full_dict(updated)
+
+    def latest_rejection_note(self, topic: str, primary_keyword: str) -> str:
+        """The reviewer's note if the most recent article for this topic and
+        keyword was rejected — the feedback a regeneration should act on.
+        Once a newer draft exists the note has been used, so it's not
+        returned again."""
+        conn = get_connection()
+        with get_lock():
+            row = conn.execute(
+                """SELECT status, reviewer_note FROM reviews
+                   WHERE lower(topic) = lower(?) AND lower(primary_keyword) = lower(?)
+                   ORDER BY created_at DESC LIMIT 1""",
+                (topic.strip(), primary_keyword.strip()),
+            ).fetchone()
+        if row and row["status"] == ReviewStatus.rejected.value and row["reviewer_note"]:
+            return row["reviewer_note"]
+        return ""
+
     def record_wordpress_post(self, article_id: str, post_id, post_url: str | None) -> None:
         """Remembers which WordPress post an article became, so publishing it
         again updates that post instead of creating a duplicate."""
@@ -148,6 +190,7 @@ class ReviewStore:
         d["compliance_risk"] = None
         d["compliance_counts"] = {}
         d["duplication_status"] = None
+        d["request"] = None
         if article_json:
             try:
                 article = json.loads(article_json)
@@ -156,10 +199,44 @@ class ReviewStore:
                 d["compliance_risk"] = compliance.get("risk_level")
                 d["compliance_counts"] = compliance.get("counts", {})
                 d["duplication_status"] = (article.get("duplication") or {}).get("status")
+                # Lets the queue offer "regenerate with this feedback" on a
+                # rejected card without another round trip.
+                d["request"] = article.get("request")
             except (json.JSONDecodeError, AttributeError):
                 pass
         d["reviewer_badge"] = cls._reviewer_badge(d)
         return d
+
+
+
+def request_for_review(item: dict) -> GenerateRequest:
+    """The generation request an article was written for. Stored with every
+    article generated since the request started being saved; for older rows
+    it is rebuilt from the review columns, with the language read off the
+    article's script."""
+    stored = (item.get("article") or {}).get("request")
+    if stored:
+        try:
+            return GenerateRequest.model_validate(stored)
+        except ValidationError:
+            pass
+    text = (item.get("article") or {}).get("optimized_article_markdown", "")
+    devanagari = sum(1 for ch in text if "\u0900" <= ch <= "\u097f")
+    latin = sum(1 for ch in text if ch.isascii() and ch.isalpha())
+    return GenerateRequest.model_construct(
+        topic=item["topic"], primary_keyword=item["primary_keyword"], geo_target="",
+        article_type=ArticleType.supporting, language=Language.hi if devanagari > latin else Language.en,
+        tone=Tone.educational,
+    )
+
+
+def markdown_with_reviewer_badge(item: dict) -> str:
+    """The article text as it should leave the app — exported or published —
+    with the named reviewer's sign-off appended when there is one."""
+    article_markdown = (item.get("article") or {}).get("optimized_article_markdown", "")
+    if item.get("reviewer_badge"):
+        return f"{article_markdown.rstrip()}\n\n---\n*{item['reviewer_badge']}*"
+    return article_markdown
 
 
 review_store = ReviewStore()

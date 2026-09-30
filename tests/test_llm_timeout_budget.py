@@ -5,6 +5,7 @@ from unittest.mock import patch
 import pytest
 
 from app import llm_providers
+
 # Patch attributes on llm_providers.settings specifically, not app.config.settings.
 # llm_providers.py did `from app.config import settings`, which binds a direct
 # reference at import time — if any other test module reloads app.config (see
@@ -74,40 +75,40 @@ def test_hindi_article_gets_a_hindi_disclaimer():
     """The disclaimer safety net used to append English text to every
     article, which both broke the Hindi reading experience and dragged the
     article's own script-purity score down."""
-    from app.llm_providers import _ensure_disclaimer
+    from app.postprocess import ensure_disclaimer
 
     hindi = "# पाचन गाइड\n\nपेट की सेहत के बारे में जानकारी।"
-    out = _ensure_disclaimer(hindi, "hi")
+    out = ensure_disclaimer(hindi, "hi")
     assert "चिकित्सा अस्वीकरण" in out
     assert "Medical Disclaimer" not in out
 
 
 def test_english_article_gets_an_english_disclaimer():
-    from app.llm_providers import _ensure_disclaimer
+    from app.postprocess import ensure_disclaimer
 
-    out = _ensure_disclaimer("# Guide\n\nSome gut health information.", "en")
+    out = ensure_disclaimer("# Guide\n\nSome gut health information.", "en")
     assert "Medical Disclaimer" in out
 
 
 def test_existing_disclaimer_is_not_duplicated():
-    from app.llm_providers import _ensure_disclaimer
+    from app.postprocess import ensure_disclaimer
 
     already = "# गाइड\n\nजानकारी।\n\n*चिकित्सा अस्वीकरण: केवल शैक्षिक।*"
-    assert _ensure_disclaimer(already, "hi").count("अस्वीकरण") == 1
+    assert ensure_disclaimer(already, "hi").count("अस्वीकरण") == 1
 
 
 def test_meta_variant_fallback_stays_in_the_article_language():
-    from app.llm_providers import _ensure_meta_variants
+    from app.postprocess import ensure_meta_variants
 
-    result = _ensure_meta_variants({"meta_description": "पाचन स्वास्थ्य की पूरी जानकारी।"}, "hi")
+    result = ensure_meta_variants({"meta_description": "पाचन स्वास्थ्य की पूरी जानकारी।"}, "hi")
     assert len(result["meta_description_variants"]) == 2
     assert all("Learn more" not in v for v in result["meta_description_variants"])
 
 
 def test_meta_variant_fallback_in_english():
-    from app.llm_providers import _ensure_meta_variants
+    from app.postprocess import ensure_meta_variants
 
-    result = _ensure_meta_variants({"meta_description": "A complete guide to gut health."}, "en")
+    result = ensure_meta_variants({"meta_description": "A complete guide to gut health."}, "en")
     assert result["meta_description_variants"][1].startswith("Learn more")
 
 

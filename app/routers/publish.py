@@ -8,7 +8,7 @@ from app.cms_wordpress import is_configured as wp_is_configured
 from app.cms_wordpress import publish_post as wp_publish_post
 from app.cms_wordpress import test_connection as wp_test_connection
 from app.config import settings
-from app.review import ReviewNotFoundError, ReviewStatus, review_store
+from app.review import ReviewNotFoundError, ReviewStatus, markdown_with_reviewer_badge, review_store
 
 router = APIRouter()
 
@@ -49,7 +49,8 @@ def wordpress_publish(article_id: str, status: str = "draft", dry_run: bool = Fa
 
     if item["status"] != ReviewStatus.approved.value:
         return JSONResponse(status_code=409, content={
-            "error": f"Article '{article_id}' is '{item['status']}', not 'approved' — only approved articles can be published."
+            "error": f"Article '{article_id}' is '{item['status']}', not 'approved' — "
+                     "only approved articles can be published."
         })
 
     article = item["article"]
@@ -69,11 +70,9 @@ def wordpress_publish(article_id: str, status: str = "draft", dry_run: bool = Fa
             "compliance_blockers": blockers,
         })
 
-    article_markdown = article.get("optimized_article_markdown", "")
-    if item.get("reviewer_badge"):
-        # Trust signal at the point of publishing — a real named reviewer
-        # stood behind this content, not just an anonymous "AI-generated" tag.
-        article_markdown = f"{article_markdown.rstrip()}\n\n---\n*{item['reviewer_badge']}*"
+    # Trust signal at the point of publishing — a real named reviewer stood
+    # behind this content, not just an anonymous "AI-generated" tag.
+    article_markdown = markdown_with_reviewer_badge(item)
 
     with _lock_for(article_id):
         # Re-read inside the lock so a concurrent publish that just finished

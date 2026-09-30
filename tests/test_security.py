@@ -60,21 +60,21 @@ def test_health_not_protected_even_with_api_key_set(monkeypatch):
 
 
 def test_disclaimer_always_present_in_mock_output():
-    from app.llm_providers import _mock_result
-    result = _mock_result("random uncommon topic", "keyword", "USA")
+    from app.mock_content import mock_result
+    result = mock_result("random uncommon topic", "keyword", "USA")
     assert "disclaimer" in result["optimized_article_markdown"].lower()
 
 
 def test_disclaimer_appended_if_missing():
-    from app.llm_providers import _ensure_disclaimer
+    from app.postprocess import ensure_disclaimer
     text = "# Some Article\n\nNo disclaimer here at all."
-    fixed = _ensure_disclaimer(text)
+    fixed = ensure_disclaimer(text)
     assert "disclaimer" in fixed.lower()
     assert fixed.startswith("# Some Article")
 
 
 def test_disclaimer_not_duplicated_if_present():
-    from app.llm_providers import _ensure_disclaimer
+    from app.postprocess import ensure_disclaimer
     text = "# Article\n\n*Medical Disclaimer: consult a doctor.*"
-    fixed = _ensure_disclaimer(text)
+    fixed = ensure_disclaimer(text)
     assert fixed == text

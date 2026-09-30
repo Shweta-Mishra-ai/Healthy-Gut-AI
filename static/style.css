@@ -359,6 +359,26 @@ input:focus, select:focus, textarea:focus {
 
 .hidden { display: none !important; }
 
+/* Spacing utilities — replace inline style="" attributes so the pages can
+   run under a Content-Security-Policy without 'unsafe-inline' styles. */
+.mt-2xs { margin-top: 0.4rem; }
+.mt-xs { margin-top: 0.5rem; }
+.mt-sm { margin-top: 0.75rem; }
+.mt-md { margin-top: 1rem; }
+.mt-lg { margin-top: 2rem; }
+.mb-md { margin-bottom: 1.25rem; }
+.text-sm { font-size: 0.88rem; }
+
+.review-editor textarea {
+    width: 100%;
+    min-height: 22rem;
+    font-family: 'Space Mono', ui-monospace, monospace;
+    font-size: 0.88rem;
+    line-height: 1.5;
+    resize: vertical;
+}
+.review-editor input[type="text"] { width: 100%; }
+
 /* --- Loading --- */
 #loading { text-align: center; padding: 2.5rem 1rem; }
 

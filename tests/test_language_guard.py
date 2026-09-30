@@ -14,7 +14,7 @@ from app.language import (
     script_purity,
     strip_foreign_script,
 )
-from app.llm_providers import ProviderOutputError, validate_provider_result
+from app.postprocess import ProviderOutputError, validate_provider_result
 
 HINDI_BODY = (
     "पेट की समस्याएँ आज बहुत आम हैं। फाइबर युक्त आहार और पर्याप्त पानी पाचन तंत्र को "
@@ -213,7 +213,7 @@ async def test_served_article_is_repaired_if_context_leaks_foreign_script(monkey
             "url_slug": "x", "faqs": [], "provider_used": "mock",
         }
 
-    monkeypatch.setattr(llm_providers, "_mock_result", dirty_mock)
+    monkeypatch.setattr(llm_providers, "mock_result", dirty_mock)
     result = await llm_providers.llm_generate("पाचन", "pachan", "Delhi", "supporting", "hi")
 
     assert "消" not in result["optimized_article_markdown"]

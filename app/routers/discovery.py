@@ -48,7 +48,10 @@ def rag_preview(topic: str, keyword: str = "", top_k: int = 3):
         "query": query,
         "corpus_size": retriever.size(),
         "matches": [
-            {"title": c["title"], "topic": c["topic"], "relevance_score": c["relevance_score"], "excerpt": c["content"][:160] + "..."}
+            {
+                "title": c["title"], "topic": c["topic"], "relevance_score": c["relevance_score"],
+                "excerpt": c["content"][:160] + "...",
+            }
             for c in chunks
         ],
     }
@@ -67,7 +70,8 @@ def analyze_existing_article(payload: AnalyzeRequest):
     """
     article_md = payload.article_markdown
     language = payload.language.value
-    topic = payload.topic or (article_md.strip().splitlines()[0].lstrip("# ").strip()[:200] if article_md.strip() else "")
+    first_line = article_md.strip().splitlines()[0] if article_md.strip() else ""
+    topic = payload.topic or first_line.lstrip("# ").strip()[:200]
 
     result = {"optimized_article_markdown": article_md, "meta_description": "", "faqs": []}
     result["metrics"] = {
@@ -116,5 +120,7 @@ def outline_preview(topic: str, keyword: str = "", geo: str = "", article_type: 
         "scope_note": None if in_scope else OUT_OF_SCOPE_MESSAGE,
         "target_word_count": f"{target_min}-{target_max}",
         "planned_sections": [{"heading": h, "target_words": w} for h, w in sections],
-        "grounding_sources": [{"title": c["title"], "topic": c["topic"], "relevance_score": c["relevance_score"]} for c in matches],
+        "grounding_sources": [
+            {"title": c["title"], "topic": c["topic"], "relevance_score": c["relevance_score"]} for c in matches
+        ],
     }

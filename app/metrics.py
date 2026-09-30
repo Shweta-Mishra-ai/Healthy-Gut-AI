@@ -31,7 +31,10 @@ _SENTENCE_END_RE = re.compile(r"[.!?।॥]")  # includes Devanagari danda/doubl
 
 def readability(text: str, language: str = "en") -> dict:
     if not text or not text.strip():
-        return {"fleschReadingEase": 0.0, "gunningFogIndex": 0.0, "avgSentenceLength": 0.0, "gradeLevel": "n/a", "note": "empty text"}
+        return {
+            "fleschReadingEase": 0.0, "gunningFogIndex": 0.0, "avgSentenceLength": 0.0,
+            "gradeLevel": "n/a", "note": "empty text",
+        }
     words = re.findall(r"\S+", text)
     nw = len(words) or 1
     sentences = len(_SENTENCE_END_RE.findall(text)) or 1

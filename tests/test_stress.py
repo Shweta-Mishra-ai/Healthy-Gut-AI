@@ -1,8 +1,9 @@
 import concurrent.futures
+
 from fastapi.testclient import TestClient
 
-from app.llm_providers import _extract_json
 from app.main import app
+from app.postprocess import extract_json
 from app.rate_limit import rate_limiter
 
 client = TestClient(app)
@@ -80,10 +81,10 @@ def test_discovery_endpoints_whitespace_validation():
 
 
 def test_extract_json_handles_markdown_code_fences():
-    """Tests _extract_json helper with various markdown code block formats."""
+    """Tests extract_json helper with various markdown code block formats."""
     fenced_json = "```json\n{\"optimized_article_markdown\": \"# Test\", \"provider_used\": \"mock\"}\n```"
-    result = _extract_json(fenced_json)
+    result = extract_json(fenced_json)
     assert result["provider_used"] == "mock"
 
     raw_fenced = "```\n{\"key\": \"value\"}\n```"
-    assert _extract_json(raw_fenced)["key"] == "value"
+    assert extract_json(raw_fenced)["key"] == "value"

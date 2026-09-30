@@ -4,8 +4,8 @@ from urllib.parse import unquote
 import pytest
 from fastapi.testclient import TestClient
 
-from app.llm_providers import _mock_result
 from app.main import app
+from app.mock_content import mock_result
 
 client = TestClient(app)
 
@@ -58,8 +58,8 @@ def test_provider_failure_fallback_is_not_cached():
     """When real providers are configured but all fail, the template article
     carries a provider_note. Caching it kept serving the template for the
     whole TTL even after the provider recovered."""
-    def failing_fallback(topic, keyword, geo, article_type, language="en", tone="educational"):
-        result = _mock_result(topic, keyword, geo, language)
+    def failing_fallback(topic, keyword, geo, article_type, language="en", tone="educational", feedback=""):
+        result = mock_result(topic, keyword, geo, language)
         result["provider_note"] = "All configured providers failed; served template content. groq: 404"
         return result
 
