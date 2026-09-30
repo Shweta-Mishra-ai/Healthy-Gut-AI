@@ -28,6 +28,16 @@ class Settings:
 
     # --- Rate limiting (per client IP) ---
     RATE_LIMIT_PER_MINUTE: int = int(os.getenv("RATE_LIMIT_PER_MINUTE", "10"))
+    # Which address identifies a client for rate limiting:
+    #   "first" — leftmost X-Forwarded-For entry (default; what Render
+    #             documents as the client IP). Only safe if the proxy in
+    #             front replaces, rather than appends to, a client-sent value.
+    #   "last"  — rightmost entry, i.e. the address the nearest proxy saw.
+    #             Cannot be spoofed by the client when exactly one proxy
+    #             appends to the header.
+    #   "peer"  — ignore X-Forwarded-For; use the TCP peer (no proxy at all).
+    # Check which one is right for a deployment with GET /debug/client-ip.
+    CLIENT_IP_MODE: str = os.getenv("CLIENT_IP_MODE", "first").strip().lower()
 
     # --- Caching ---
     CACHE_TTL_SECONDS: int = int(os.getenv("CACHE_TTL_SECONDS", "3600"))

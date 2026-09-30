@@ -51,7 +51,8 @@ def init_db():
         # only applies to brand-new databases, so existing ones need these
         # columns added explicitly. SQLite has no "ADD COLUMN IF NOT EXISTS",
         # so we probe and swallow the specific "duplicate column" error only.
-        for column_def in ("reviewer_name TEXT", "reviewer_credential TEXT"):
+        for column_def in ("reviewer_name TEXT", "reviewer_credential TEXT",
+                           "wp_post_id INTEGER", "wp_post_url TEXT", "wp_published_at REAL"):
             try:
                 _conn.execute(f"ALTER TABLE reviews ADD COLUMN {column_def}")
             except sqlite3.OperationalError as e:

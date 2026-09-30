@@ -25,6 +25,9 @@ logging.basicConfig(
 )
 logger = logging.getLogger("gutfolio")
 
+if settings.CLIENT_IP_MODE not in ("first", "last", "peer"):
+    raise ValueError(f"CLIENT_IP_MODE must be 'first', 'last' or 'peer', got {settings.CLIENT_IP_MODE!r}")
+
 app = FastAPI(title="Healthy Gut", version="2.0.0")
 
 app.add_middleware(
@@ -39,10 +42,14 @@ app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
 def client_key(request: Request) -> str:
-    fwd = request.headers.get("x-forwarded-for")
-    if fwd:
-        return fwd.split(",")[0].strip()
-    return request.client.host if request.client else "unknown"
+    peer = request.client.host if request.client else "unknown"
+    mode = settings.CLIENT_IP_MODE
+    if mode == "peer":
+        return peer
+    hops = [h.strip() for h in request.headers.get("x-forwarded-for", "").split(",") if h.strip()]
+    if not hops:
+        return peer
+    return hops[-1] if mode == "last" else hops[0]
 
 
 PROTECTED_PATH_PREFIXES = (
@@ -189,6 +196,20 @@ def _all_route_paths(routes) -> set:
 @app.get("/debug")
 def debug():
     return {"routes": sorted(_all_route_paths(app.routes))}
+
+
+@app.get("/debug/client-ip")
+def debug_client_ip(request: Request):
+    """Shows what the rate limiter keys this request on. Send a fake
+    X-Forwarded-For through the real deployment: if rate_limit_key echoes the
+    fake value back, clients can dodge the limit, and CLIENT_IP_MODE needs
+    changing."""
+    return {
+        "client_ip_mode": settings.CLIENT_IP_MODE,
+        "x_forwarded_for": request.headers.get("x-forwarded-for"),
+        "peer": request.client.host if request.client else None,
+        "rate_limit_key": client_key(request),
+    }
 
 
 @app.get("/", response_class=HTMLResponse)

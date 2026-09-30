@@ -89,6 +89,17 @@ class ReviewStore:
             updated = conn.execute("SELECT * FROM reviews WHERE id = ?", (article_id,)).fetchone()
         return self._row_to_full_dict(updated)
 
+    def record_wordpress_post(self, article_id: str, post_id, post_url: str | None) -> None:
+        """Remembers which WordPress post an article became, so publishing it
+        again updates that post instead of creating a duplicate."""
+        conn = get_connection()
+        with get_lock():
+            conn.execute(
+                "UPDATE reviews SET wp_post_id = ?, wp_post_url = ?, wp_published_at = ? WHERE id = ?",
+                (post_id, post_url, time.time(), article_id),
+            )
+            conn.commit()
+
     def list_queue(self, status: str = "draft", limit: int = 50) -> list[dict]:
         limit = max(1, min(limit, 200))
         conn = get_connection()

@@ -223,6 +223,7 @@ Full reference in [`.env.example`](.env.example).
 | `LLM_TIMEOUT_SECONDS` | No | `45` | Per-attempt timeout |
 | `LLM_MAX_RETRIES` | No | `2` | Retries per provider before falling through |
 | `RATE_LIMIT_PER_MINUTE` | No | `10` | Requests per IP per minute on `/generate*` |
+| `CLIENT_IP_MODE` | No | `first` | Which `X-Forwarded-For` entry identifies a client for rate limiting (`first`, `last`, `peer`). Check with `GET /debug/client-ip` — if a fake `X-Forwarded-For` you send comes back as `rate_limit_key`, switch to `last`. |
 | `CACHE_TTL_SECONDS` | No | `3600` | How long identical requests are served from cache |
 | `MAX_BATCH_SIZE` | No | `10` | Max items per `/generate/batch` call |
 | `BATCH_CONCURRENCY` | No | `3` | Concurrent LLM calls within a batch |
