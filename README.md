@@ -1,6 +1,6 @@
 <div align="center">
 
-# 🥗 Healthy Gut AI
+# 🥗 Healthy Gut
 
 **Production-grade AI content engine for medically-grounded, SEO-optimized gut health articles.**
 
@@ -19,7 +19,7 @@
 
 ## Overview
 
-Healthy Gut AI takes a topic, a primary keyword, and a geo-target, and returns
+Healthy Gut takes a topic, a primary keyword, and a geo-target, and returns
 a medically-grounded, SEO-structured article — complete with meta description variants,
 URL slug, FAQs, JSON-LD schema, readability metrics, and quality scores — in one request.
 
@@ -34,7 +34,7 @@ demo usually is:
 - **Tested, not just written.** 150 automated tests, CI on every push.
 
 <p align="center">
-  <img src="docs/pipeline-flow.gif" alt="Healthy Gut AI request pipeline animation" width="800">
+  <img src="docs/pipeline-flow.gif" alt="Healthy Gut request pipeline animation" width="800">
 </p>
 
 ---
@@ -70,7 +70,7 @@ demo usually is:
 ## 🏗 Architecture
 
 <p align="center">
-  <img src="docs/architecture.svg" alt="Healthy Gut AI architecture diagram" width="900">
+  <img src="docs/architecture.svg" alt="Healthy Gut architecture diagram" width="900">
 </p>
 
 ### Request pipeline (flowchart)
@@ -161,7 +161,7 @@ sequenceDiagram
 
 ```bash
 git clone https://github.com/Shweta-Mishra-ai/Healthy-Gut-AI.git
-cd Healthy-Gut-AI/hga
+cd Healthy-Gut-AI
 python -m venv venv
 source venv/bin/activate        # Windows: venv\Scripts\activate
 pip install -r requirements.txt
@@ -202,7 +202,7 @@ curl http://localhost:8000/health
   "mode": "live",
   "providers_configured": { "groq": true, "openrouter": false, "openai": false },
   "cache": { "entries": 0, "max_entries": 500, "ttl_seconds": 3600 },
-  "database": { "path": "healthy_gut_ai.db", "reviews": 0 }
+  "database": { "path": "gutfolio.db", "reviews": 0 }
 }
 ```
 
@@ -215,7 +215,7 @@ Full reference in [`.env.example`](.env.example).
 | Variable | Required | Default | Description |
 |---|---|---|---|
 | `GROQ_API_KEY` | No* | — | Primary LLM provider, free tier |
-| `GROQ_MODEL` | No | `llama-3.3-70b-versatile` | Groq model name |
+| `GROQ_MODEL` | No | `openai/gpt-oss-120b` | Groq model name (Llama 3.3 70B was decommissioned by Groq on Aug 16, 2026 — see note below) |
 | `OPENROUTER_API_KEY` | No* | — | Free-tier fallback if Groq is unavailable |
 | `OPENROUTER_MODEL` | No | `meta-llama/llama-3.3-70b-instruct:free` | OpenRouter model name |
 | `OPENAI_API_KEY` | No | — | Optional paid last-resort fallback |
@@ -227,13 +227,23 @@ Full reference in [`.env.example`](.env.example).
 | `MAX_BATCH_SIZE` | No | `10` | Max items per `/generate/batch` call |
 | `BATCH_CONCURRENCY` | No | `3` | Concurrent LLM calls within a batch |
 | `API_KEY` | No | — | If set, requires `X-API-Key` header on `/generate*`, `/export/*`, `/debug` |
-| `DATABASE_PATH` | No | `healthy_gut_ai.db` | SQLite file for review history + dashboard data |
+| `DATABASE_PATH` | No | `gutfolio.db` | SQLite file for review history + dashboard data |
 | `WORDPRESS_URL` | No | — | WordPress site URL for publishing (e.g. `https://yoursite.com`) |
 | `WORDPRESS_USERNAME` | No | — | WordPress username (existing account) |
 | `WORDPRESS_APP_PASSWORD` | No | — | Application Password from WP admin (Users > Profile) |
 | `WORDPRESS_TIMEOUT_SECONDS` | No | `15` | Request timeout for WordPress API calls |
 
 *No provider key is required — the app runs in mock mode without any of them.*
+
+> **⚠️ Provider models get deprecated — check `/health` if you're unexpectedly seeing mock content.**
+> Groq deprecated `llama-3.3-70b-versatile` (announced June 17, 2026, decommissioned Aug 16, 2026),
+> which was this app's original default `GROQ_MODEL`. When a configured model is decommissioned,
+> every API call to it fails and the app correctly falls back through the provider chain to mock
+> mode — with **no obvious error on the frontend**, since "the app still works" is exactly what the
+> fallback chain guarantees. The only visible signal is `/health` reporting `"mode": "mock"` despite
+> a real key being configured, or unusually short/generic article content. If this happens again:
+> check the provider's model-deprecation page, update `GROQ_MODEL` (or `OPENROUTER_MODEL` /
+> `OPENAI_MODEL`) to a current model ID, and redeploy.
 
 ---
 
@@ -290,7 +300,7 @@ Full reference in [`.env.example`](.env.example).
   "faqs": [{ "question": "...", "answer": "..." }],
   "schema_json_ld": { "@context": "https://schema.org", "@type": "Article" },
   "cta_soft": "Explore more free gut health resources...",
-  "cta_direct": "Try Healthy Gut AI FREE today...",
+  "cta_direct": "Try Healthy Gut FREE today...",
   "provider_used": "groq",
   "cached": false,
   "metrics": {
@@ -419,7 +429,7 @@ Optional — the app works fully without it (dry-run mode always works, for
 previewing exactly what would be sent).
 
 1. On your WordPress site, go to **Users → Profile → Application Passwords** (built into WordPress 5.6+).
-2. Enter a name (e.g. "Healthy Gut AI") and click **Add New Application Password**. Copy the generated code.
+2. Enter a name (e.g. "Healthy Gut") and click **Add New Application Password**. Copy the generated code.
 3. Set in `.env`:
    ```env
    WORDPRESS_URL=https://yoursite.com
@@ -446,7 +456,7 @@ Released under the [MIT License](LICENSE).
 
 <div align="center">
 
-**If Healthy Gut AI was useful to you, please consider giving it a ⭐ —**
+**If Healthy Gut was useful to you, please consider giving it a ⭐ —**
 **it genuinely helps the project reach more people.**
 
 [![Star this repo](https://img.shields.io/github/stars/Shweta-Mishra-ai/Healthy-Gut-AI?style=social)](https://github.com/Shweta-Mishra-ai/Healthy-Gut-AI)

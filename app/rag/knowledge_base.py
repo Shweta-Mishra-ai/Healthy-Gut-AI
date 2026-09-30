@@ -130,6 +130,19 @@ KNOWLEDGE_BASE = [
                    "recognized medical diagnosis and claims about it should be presented cautiously.",
     },
     {
+        "id": "h_pylori",
+        "topic": "H. pylori",
+        "title": "H. Pylori Infection",
+        "content": "Helicobacter pylori is a common bacterium that infects the stomach lining and is the leading "
+                   "cause of gastritis and peptic ulcers worldwide; many infected people have no symptoms at all. "
+                   "When symptomatic, it can cause upper abdominal pain, bloating, nausea, and, if untreated for "
+                   "years, increases risk of peptic ulcer disease and, rarely, stomach cancer. Diagnosis is "
+                   "typically via a breath test, stool antigen test, or biopsy during endoscopy — blood antibody "
+                   "tests can show past exposure but don't confirm an active infection. Treatment is a course of "
+                   "antibiotics combined with an acid-suppressing medication (commonly called triple or "
+                   "quadruple therapy), and a follow-up test is recommended to confirm the infection has cleared.",
+    },
+    {
         "id": "gastritis",
         "topic": "gastritis",
         "title": "Gastritis",

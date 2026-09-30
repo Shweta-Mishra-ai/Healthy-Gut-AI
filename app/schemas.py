@@ -1,6 +1,5 @@
 import re
 from enum import Enum
-from typing import List, Optional
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -66,7 +65,7 @@ class GenerateRequest(BaseModel):
 
 
 class BatchGenerateRequest(BaseModel):
-    items: List[GenerateRequest]
+    items: list[GenerateRequest]
 
     @field_validator("items")
     @classmethod
@@ -127,12 +126,12 @@ class FAQ(BaseModel):
 class ArticleResult(BaseModel):
     optimized_article_markdown: str
     meta_description: str = ""
-    meta_description_variants: List[str] = []
+    meta_description_variants: list[str] = []
     url_slug: str = ""
-    faqs: List[FAQ] = []
+    faqs: list[FAQ] = []
     schema_json_ld: dict = {}
     cta_soft: str = ""
     cta_direct: str = ""
     provider_used: str = "mock"
-    metrics: Optional[dict] = None
-    error: Optional[str] = None
+    metrics: dict | None = None
+    error: str | None = None

@@ -116,7 +116,7 @@ def build_structured_data(
     geo: str = "",
     language: str = "en",
     site_url: str = "",
-    publisher_name: str = "Gutfolio",
+    publisher_name: str = "Healthy Gut",
     reviewer_badge: str = "",
 ) -> dict:
     """schema.org @graph covering Article + FAQPage + BreadcrumbList.
@@ -197,7 +197,7 @@ def build_structured_data(
 
 
 def build_social_meta(result: dict, topic: str, keyword: str, geo: str = "", language: str = "en",
-                      site_url: str = "", site_name: str = "Gutfolio") -> dict:
+                      site_url: str = "", site_name: str = "Healthy Gut") -> dict:
     """Open Graph + Twitter card tags, ready to paste into a page <head>."""
     article_md = result.get("optimized_article_markdown", "") or ""
     slug = _clean_slug(result.get("url_slug", ""), topic)

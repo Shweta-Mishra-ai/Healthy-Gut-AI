@@ -82,7 +82,7 @@ def _mock_result(topic: str, keyword: str, geo: str, language: str = "en") -> di
             {"question": f"क्या {topic} {geo} में आम है?", "answer": f"हाँ, {topic} {geo} में कई लोगों को प्रभावित करता है।"},
         ]
         cta_soft = "गट हेल्थ से जुड़े और मुफ़्त संसाधन हमारे ब्लॉग पर देखें।"
-        cta_direct = f"आज ही Gutfolio मुफ़्त में आज़माएँ — {geo} के लिए पर्सनलाइज़्ड प्लान!"
+        cta_direct = f"आज ही Healthy Gut मुफ़्त में आज़माएँ — {geo} के लिए पर्सनलाइज़्ड प्लान!"
     else:
         article = f"""# {topic.title()}: Your Complete Guide
 
@@ -120,7 +120,7 @@ If symptoms persist for more than 3 weeks, consult a gastroenterologist in **{ge
             {"question": f"Is {topic} common in {geo}?", "answer": f"Yes, {topic} affects many people in {geo}."},
         ]
         cta_soft = "Explore more free gut health resources on our blog."
-        cta_direct = f"Try Gutfolio FREE today — personalized plans for {geo}!"
+        cta_direct = f"Try Healthy Gut FREE today — personalized plans for {geo}!"
 
     return {
         "optimized_article_markdown": article,
@@ -171,7 +171,7 @@ def _build_prompts(topic, keyword, geo, article_type, language, tone="educationa
             "- डॉक्टर से कब परामर्श करें (When to Consult a Doctor): ~150-200 शब्द"
         )
 
-        prompt1 = f"""आप Gutfolio के एक वरिष्ठ चिकित्सा सामग्री लेखक (Medical Content Writer) हैं।
+        prompt1 = f"""आप Healthy Gut के एक वरिष्ठ चिकित्सा सामग्री लेखक (Medical Content Writer) हैं।
 आपको स्वास्थ्य और पाचन तंत्र (Gut Health) विषय पर एक संपूर्ण, सटीक और SEO-अनुकूलित {article_type} लेख लिखना है।
 
 विषय (Topic): {topic}
@@ -244,7 +244,7 @@ meta_description_variants के लिए ठीक 3 अलग-अलग ह�
             "- When to See a Doctor: ~150-200 words"
         )
 
-    prompt1 = f"""You are a senior medical content writer for Gutfolio, writing for an educated general
+    prompt1 = f"""You are a senior medical content writer for Healthy Gut, writing for an educated general
 audience, not clinicians. Write a medically accurate, SEO-optimized {article_type} article about: {topic}
 Primary keyword: {keyword}
 

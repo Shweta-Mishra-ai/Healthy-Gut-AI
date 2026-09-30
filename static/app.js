@@ -569,7 +569,10 @@ async function downloadBlob(url, body, filename, label) {
 }
 
 function safeFilename(topic, ext) {
-    return `${(topic || 'article').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'article'}.${ext}`;
+    // \p{L}\p{M} keeps Devanagari letters and vowel signs, so a Hindi topic
+    // downloads under its own name instead of a generic "article.pdf".
+    const stem = (topic || '').toLowerCase().replace(/[^\p{L}\p{M}\p{N}]+/gu, '-').replace(/^-+|-+$/g, '');
+    return `${stem || 'article'}.${ext}`;
 }
 
 async function downloadExport(kind, ext) {
@@ -590,7 +593,7 @@ async function downloadBatchZip() {
     btn.disabled = true;
     btn.textContent = 'Bundling...';
     try {
-        await downloadBlob('/export/batch/zip', { items: state.lastRequests }, 'gutfolio-batch.zip', 'ZIP bundle');
+        await downloadBlob('/export/batch/zip', { items: state.lastRequests }, 'healthy-gut-batch.zip', 'ZIP bundle');
     } finally {
         btn.disabled = false;
         btn.textContent = original;

@@ -16,7 +16,8 @@ from app.config import settings
 from app.constants import STATIC_DIR
 from app.rate_limit import rate_limiter
 from app.review import review_store
-from app.routers import discovery, generation, publish, review as review_router
+from app.routers import discovery, generation, publish
+from app.routers import review as review_router
 
 logging.basicConfig(
     level=os.getenv("LOG_LEVEL", "INFO"),
@@ -24,7 +25,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger("gutfolio")
 
-app = FastAPI(title="Gutfolio", version="2.0.0")
+app = FastAPI(title="Healthy Gut", version="2.0.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -203,4 +204,7 @@ app.include_router(publish.router)
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("app.main:app", host="0.0.0.0", port=int(os.getenv("PORT", 8000)))
+    # host="0.0.0.0" is required for container platforms (Render/Docker) to
+    # route external traffic in — 127.0.0.1 would make the app unreachable
+    # from outside the container. Explicit entrypoint, not a hidden default.
+    uvicorn.run("app.main:app", host="0.0.0.0", port=int(os.getenv("PORT", "8000")))  # nosec B104

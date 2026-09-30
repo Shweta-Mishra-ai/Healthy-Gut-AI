@@ -1,5 +1,5 @@
-import time
 import threading
+import time
 from collections import defaultdict
 
 from app.config import settings

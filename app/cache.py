@@ -1,7 +1,6 @@
 import hashlib
-import time
 import threading
-from typing import Optional
+import time
 
 from app.config import settings
 
@@ -22,7 +21,7 @@ class TTLCache:
         raw = "||".join(p.lower().strip() for p in parts)
         return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
-    def get(self, key: str) -> Optional[dict]:
+    def get(self, key: str) -> dict | None:
         with self._lock:
             entry = self._store.get(key)
             if not entry:
