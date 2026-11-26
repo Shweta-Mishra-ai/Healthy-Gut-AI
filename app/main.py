@@ -14,6 +14,7 @@ from pydantic import ValidationError
 from app.cache import article_cache
 from app.config import settings
 from app.constants import STATIC_DIR
+from app.llm_providers import provider_status
 from app.rate_limit import rate_limiter
 from app.review import review_store
 from app.routers import articles, discovery, generation, publish
@@ -29,6 +30,12 @@ if settings.CLIENT_IP_MODE not in ("first", "last", "peer"):
     raise ValueError(f"CLIENT_IP_MODE must be 'first', 'last' or 'peer', got {settings.CLIENT_IP_MODE!r}")
 
 app = FastAPI(title="Healthy Gut", version="2.0.0")
+
+if not settings.API_KEY:
+    if settings.ALLOW_UNAUTHENTICATED:
+        logger.warning("API_KEY is not set and ALLOW_UNAUTHENTICATED is on: every route is open. Local use only.")
+    else:
+        logger.warning("API_KEY is not set: generation, review and publishing routes are disabled until it is.")
 
 app.add_middleware(
     CORSMiddleware,
@@ -53,7 +60,10 @@ def client_key(request: Request) -> str:
 
 
 PROTECTED_PATH_PREFIXES = (
-    "/generate", "/export", "/debug", "/review", "/dashboard", "/publish", "/articles",
+    "/generate", "/export", "/debug", "/review", "/dashboard", "/publish", "/articles", "/reviewers",
+    # Both return ids, topics and keywords of the article library (/analyze
+    # through its duplicate scan), so they were a read path around the key.
+    "/analyze", "/internal-links",
 )
 
 # The review queue and dashboard are HTML pages loaded directly by a browser,
@@ -72,6 +82,8 @@ PUBLIC_PAGE_PATHS = ("/review", "/dashboard")
 RATE_LIMITED_PATHS = (
     "/generate", "/generate/batch", "/generate/batch/stream",
     "/export/markdown", "/export/json", "/export/docx", "/export/pdf", "/export/batch/zip",
+    # No provider cost, but up to 200k characters of TF-IDF and regex work per call.
+    "/analyze",
 )
 
 SECURITY_HEADERS = {
@@ -101,13 +113,51 @@ APP_PAGE_CSP = "; ".join((
 ))
 
 
-def _requires_api_key(request: Request) -> bool:
-    if not settings.API_KEY:
-        return False
+def _is_protected(request: Request) -> bool:
     path = request.url.path.rstrip("/") or "/"
     if request.method in ("GET", "HEAD") and path in PUBLIC_PAGE_PATHS:
         return False
     return path.startswith(PROTECTED_PATH_PREFIXES)
+
+
+def _is_live_publish(request: Request) -> bool:
+    path = request.url.path.rstrip("/")
+    if request.method != "POST" or not path.startswith("/publish/wordpress/"):
+        return False
+    if path in ("/publish/wordpress/status", "/publish/wordpress/test-connection"):
+        return False
+    return request.query_params.get("dry_run", "false").strip().lower() not in ("1", "true", "yes")
+
+
+def _auth_failure(request: Request, request_id: str) -> JSONResponse | None:
+    """None when the request may proceed, else the response to send."""
+    if not _is_protected(request):
+        return None
+    headers = {"X-Request-ID": request_id}
+    if settings.API_KEY:
+        provided = request.headers.get("x-api-key", "")
+        # Constant-time comparison: a plain != leaks the key one byte at a
+        # time to anyone who can measure response latency.
+        if secrets.compare_digest(provided, settings.API_KEY):
+            return None
+        logger.warning("[%s] Rejected request to %s: missing/invalid API key", request_id, request.url.path)
+        return JSONResponse(
+            status_code=401,
+            content={"error": "Missing or invalid API key. Set the X-API-Key header."},
+            headers=headers,
+        )
+    if not settings.ALLOW_UNAUTHENTICATED:
+        return JSONResponse(status_code=503, content={
+            "error": "This deployment has no API_KEY configured, so generation, review and publishing are "
+                     "disabled. Set API_KEY on the server (ALLOW_UNAUTHENTICATED=true is for local development only).",
+        }, headers=headers)
+    if _is_live_publish(request):
+        # Open mode is for trying the app locally. Writing to a real external
+        # site is never allowed without a key, whatever the mode.
+        return JSONResponse(status_code=403, content={
+            "error": "Publishing to WordPress requires API_KEY to be set on the server. Dry runs still work.",
+        }, headers=headers)
+    return None
 
 
 @app.middleware("http")
@@ -115,17 +165,9 @@ async def rate_limit_and_logging_middleware(request: Request, call_next):
     start = time.time()
     request_id = request.headers.get("x-request-id") or uuid.uuid4().hex[:12]
 
-    if _requires_api_key(request):
-        provided = request.headers.get("x-api-key", "")
-        # Constant-time comparison: a plain != leaks the key one byte at a
-        # time to anyone who can measure response latency.
-        if not secrets.compare_digest(provided, settings.API_KEY):
-            logger.warning("[%s] Rejected request to %s: missing/invalid API key", request_id, request.url.path)
-            return JSONResponse(
-                status_code=401,
-                content={"error": "Missing or invalid API key. Set the X-API-Key header."},
-                headers={"X-Request-ID": request_id},
-            )
+    denied = _auth_failure(request, request_id)
+    if denied is not None:
+        return denied
 
     if request.method == "POST" and request.url.path.rstrip("/") in RATE_LIMITED_PATHS:
         key = client_key(request)
@@ -189,8 +231,10 @@ async def pydantic_validation_handler(request: Request, exc: ValidationError):
     return _validation_failed(exc.errors())
 
 
-@app.api_route("/health", methods=["GET", "HEAD"])
-@app.api_route("/api/v1/health", methods=["GET", "HEAD"])
+@app.get("/health")
+@app.head("/health", include_in_schema=False)
+@app.get("/api/v1/health", include_in_schema=False)
+@app.head("/api/v1/health", include_in_schema=False)
 def health():
     providers_configured = {
         "groq": bool(settings.GROQ_API_KEY),
@@ -202,8 +246,12 @@ def health():
         "mode": "live" if any(providers_configured.values()) else "mock",
         "providers_configured": providers_configured,
         "api_key_protected": bool(settings.API_KEY),
+        "auth": "api_key" if settings.API_KEY else ("open" if settings.ALLOW_UNAUTHENTICATED else "disabled"),
+        "provider_status": provider_status(),
         "cache": article_cache.stats(),
-        "database": {"path": settings.DATABASE_PATH, "reviews": review_store.counts()["total"]},
+        # The database file path used to be returned here — server layout
+        # is nobody's business on a public endpoint.
+        "database": {"reviews": review_store.counts()["total"]},
     }
 
 

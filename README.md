@@ -49,7 +49,7 @@ demo usually is:
 | **Quality scoring** | Every article gets a programmatic 0-100 score with specific flags (word count vs. target, keyword placement, meta description length, slug format, FAQ count, readability band, disclaimer presence, **language-script purity for non-English requests**) — not a self-reported LLM claim |
 | **Human review** | Every article starts as a `draft`; a reviewer must explicitly approve or reject it (`/review` page) before it's considered publish-ready — no article ships without a human checking the medical framing |
 | **Reviewer edits & feedback** | A reviewer can correct a draft in place (re-scored like a fresh article, disclaimer guaranteed), or reject it with a note that is handed to the writer when the topic is regenerated |
-| **Reviewer credential badge** | Approving an article can optionally attach a reviewer name + credential (e.g. "Dr. Anita Rao, MBBS, RMP") — self-attested, stored, shown in the review queue, and appended to the article when publishing to WordPress |
+| **Registered reviewer sign-off** | Reviewers are configured by the operator (`REVIEWERS_JSON` / `REVIEWERS_FILE`: name, credential, registration number). Only a registered reviewer's sign-off is printed on the article ("Reviewed for medical accuracy by …, Reg. No. …") and emitted as schema.org `reviewedBy`. Without a registry, a typed name is kept as an internal, self-attested record and never published. Verifying each reviewer (e.g. against the NMC register) is the operator's responsibility |
 | **High Load & Memory GC** | SQLite WAL mode + busy timeout pragmas, bounded TTL cache, and automatic stale IP key cleanup to prevent memory leaks under 5,000+ requests |
 | **Internal linking** | Every new article gets TF-IDF-ranked suggestions to link to previously **approved** articles (`internal_link_suggestions`), for SEO cluster building |
 | **WordPress publishing** | Optional REST API integration (`app/cms_wordpress.py`) — publishes **approved** articles only, as WordPress drafts by default, with a dry-run mode to preview the exact payload before any real site is configured |
@@ -165,7 +165,7 @@ git clone https://github.com/Shweta-Mishra-ai/Healthy-Gut-AI.git
 cd Healthy-Gut-AI
 python -m venv venv
 source venv/bin/activate        # Windows: venv\Scripts\activate
-pip install -r requirements.txt
+pip install -r requirements-dev.txt   # production installs only requirements.txt
 ```
 
 ### 2. Configure environment
@@ -178,7 +178,16 @@ Edit `.env` — at minimum:
 
 ```env
 GROQ_API_KEY=gsk_your_key_here
+# Either protect the app with a key (required in production)...
+API_KEY=choose-a-long-random-string
+# ...or, on your own machine only, run without one:
+# ALLOW_UNAUTHENTICATED=true
 ```
+
+> **The app fails closed.** With no `API_KEY` and no `ALLOW_UNAUTHENTICATED=true`,
+> generation, review, publishing and the library routes return 503 with an
+> explanation. A live WordPress publish always requires `API_KEY`, even in open mode.
+> Enter the key once under **Access key** in the app header.
 
 > No key set? The app runs in **mock mode** automatically — fully functional
 > for local development and demos, zero cost, zero setup.
@@ -228,7 +237,9 @@ Full reference in [`.env.example`](.env.example).
 | `CACHE_TTL_SECONDS` | No | `3600` | How long identical requests are served from cache |
 | `MAX_BATCH_SIZE` | No | `10` | Max items per `/generate/batch` call |
 | `BATCH_CONCURRENCY` | No | `3` | Concurrent LLM calls within a batch |
-| `API_KEY` | No | — | If set, requires `X-API-Key` header on `/generate*`, `/export/*`, `/articles/*`, `/review/*` API, `/dashboard/stats`, `/publish/*`, `/debug` |
+| `API_KEY` | **Yes (production)** | — | Required `X-API-Key` header on `/generate*`, `/export/*`, `/articles/*`, `/review/*` API, `/reviewers`, `/dashboard/stats`, `/publish/*`, `/analyze`, `/internal-links`, `/debug`. Unset ⇒ those routes are disabled (503). `render.yaml` generates one |
+| `ALLOW_UNAUTHENTICATED` | No | `false` | Local development only: run protected routes without a key. Live WordPress publishing still requires `API_KEY` |
+| `REVIEWERS_JSON` / `REVIEWERS_FILE` | No | — | Reviewer registry: JSON list of `{"id","name","credential","registration"}` (inline or file path). When set, approval requires a registered reviewer and only their sign-off is published |
 | `DATABASE_PATH` | No | `gutfolio.db` | SQLite file for review history + dashboard data |
 | `WORDPRESS_URL` | No | — | WordPress site URL for publishing (e.g. `https://yoursite.com`) |
 | `WORDPRESS_USERNAME` | No | — | WordPress username (existing account) |
@@ -266,7 +277,8 @@ Full reference in [`.env.example`](.env.example).
 | `GET` | `/dashboard/stats` | JSON dashboard data (same source as the HTML page) |
 | `GET` | `/review` | HTML review queue — edit, approve/reject, regenerate with feedback, publish |
 | `GET` | `/review/counts` | Draft/approved/rejected counts |
-| `GET` | `/review/queue?status=draft` | List articles by review status |
+| `GET` | `/review/queue?status=draft&limit=25&offset=0&q=` | List articles by review status, paginated, optional topic/keyword search (`has_more` tells whether another page exists) |
+| `GET` | `/reviewers` | The configured reviewer registry (`registry_enabled`, `reviewers`) |
 | `GET` | `/review/{id}` | Fetch one article's full review record |
 | `POST` | `/review/{id}/approve` | Approve a draft (one-way — 409 if already reviewed) |
 | `POST` | `/review/{id}/reject` | Reject a draft (one-way — 409 if already reviewed). The note is given to the writer on the next generation of the same topic + keyword |
@@ -329,8 +341,13 @@ Full reference in [`.env.example`](.env.example).
 ## 🧪 Testing
 
 ```bash
-python -m pytest     # tests
-ruff check .         # lint (pip install ruff) — also enforced in CI
+python -m pytest                          # unit + API tests (coverage gate 90% in CI)
+ruff check .                              # lint
+pip-audit -r requirements.txt             # known-vulnerability scan
+node --test tests_js/*.test.mjs           # frontend unit tests (escaping, markdown renderer)
+python -m playwright install chromium     # once
+python -m pytest e2e                      # browser end-to-end suite (real app + fake WordPress)
+LIVE_PROVIDER_TESTS=1 LIVE_GROQ_API_KEY=... python -m pytest tests/test_live_provider.py  # real-provider contract test
 ```
 
 The suite covers, among others:
@@ -347,7 +364,10 @@ The suite covers, among others:
 | `tests/test_scope_and_batch_export.py` | Topic-scope guard (in/out of domain), batch ZIP export contents |
 | `tests/test_quality.py` | Programmatic quality scoring — word count, keyword placement, meta length, slug format, FAQ count, script purity |
 | `tests/test_load.py` | Concurrent requests under load, bounded batch concurrency, sliding window recovery, stale IP key memory cleanup |
-| `tests/test_reviewer_badge.py` | Reviewer credential badge — storage, computed badge text, validation, WordPress publish integration |
+| `tests/test_reviewer_badge.py` | Reviewer registry — registered vs self-attested sign-off, badge text, `reviewedBy` schema, retention of approved articles, queue pagination/search |
+| `tests/test_auth_modes.py` | Fail-closed auth, open dev mode, live-publish key requirement, no leaked exception text |
+| `tests/test_compliance_precision.py` | Compliance scanner precision: negations, conditionals, nutrition vs dosing, Hindi rules, disclaimer detection |
+| `tests/test_scoring_and_limits.py` | Readability on markdown, whole-word keywords, duplicate scope, prompt-injection guard, batch rate cost, template quality, provider health, token usage |
 | `tests/test_phase2_phase3.py` | Outline preview (in/out of scope), tone field validation, JSON/Markdown export, references section, dashboard stats |
 | `tests/test_review.py` | Review workflow — draft registration, queue listing/filtering, approve/reject, 404/409 handling |
 | `tests/test_meta_variants.py` | A/B meta description variants — mock generation, safety-net fallback |
@@ -423,12 +443,17 @@ Healthy-Gut-AI/
 
 1. Push to GitHub, connect the repo in Render as a new Web Service.
 2. Render auto-detects `render.yaml` (build/start commands, default env vars).
-3. Add secrets manually in the Render dashboard: `GROQ_API_KEY` at minimum.
+3. `render.yaml` generates a random `API_KEY` on first deploy — copy it from the service's
+   **Environment** tab and paste it into **Access key** in the app header.
+4. Add secrets in the Render dashboard: `GROQ_API_KEY` at minimum, and `REVIEWERS_JSON`
+   if articles should carry a published reviewer sign-off.
+5. The free plan's disk is wiped on every redeploy, and the SQLite review history with it — attach a
+   persistent disk (paid) and point `DATABASE_PATH` at it before relying on the review queue.
 
 ### Railway
 
 1. Push to GitHub, connect the repo in Railway.
-2. Set environment variables (at minimum `GROQ_API_KEY`) under **Variables**.
+2. Set environment variables (at minimum `GROQ_API_KEY` and `API_KEY`) under **Variables**.
 3. Railway auto-detects `Procfile` — no further config needed.
 
 ### Vercel / AWS Lambda

@@ -20,6 +20,46 @@ def _chunk(chunk_id: str) -> dict | None:
     return next((c for c in KNOWLEDGE_BASE if c["id"] == chunk_id), None)
 
 
+_SMALL_WORDS = {"a", "an", "and", "as", "at", "but", "by", "for", "in", "of", "on", "or", "the", "to", "vs", "with"}
+
+
+def headline_case(text: str) -> str:
+    """Title case that leaves acronyms and mixed-case words alone. str.title()
+    turned "IBS diet plan" into "Ibs Diet Plan" in every template title."""
+    words = text.split()
+    out = []
+    for i, word in enumerate(words):
+        if any(ch.isupper() for ch in word) or any(ch.isdigit() for ch in word):
+            out.append(word)
+        elif i and word.lower() in _SMALL_WORDS:
+            out.append(word.lower())
+        else:
+            out.append(word[:1].upper() + word[1:])
+    return " ".join(out)
+
+
+_META_FILLERS = {
+    "en": [" Includes practical diet tips.", " Plus clear signs that mean you should see a doctor.",
+           " Written for everyday readers."],
+    "hi": [" आसान डाइट टिप्स के साथ।", " साथ ही डॉक्टर से कब मिलें, यह भी जानें।", " आम पाठकों के लिए सरल भाषा में।"],
+}
+
+
+def fit_meta(text: str, language: str = "en", low: int = 120, high: int = 160) -> str:
+    """Keeps a template meta description inside the 120-160 character range
+    the app's own quality check enforces — the template used to produce a
+    108-character meta and then flag itself for it."""
+    text = text.strip()
+    for filler in _META_FILLERS.get(language, _META_FILLERS["en"]):
+        if len(text) >= low:
+            break
+        text += filler
+    if len(text) > high:
+        cut = text[:high - 1].rsplit(" ", 1)[0].rstrip(",;:")
+        text = cut + "…"
+    return text
+
+
 def _first_sentence(text: str) -> str:
     head, sep, _ = text.partition(". ")
     return head + "." if sep else text
@@ -39,7 +79,7 @@ def _section_chunks(chunks: list[dict]) -> list[dict]:
 
 
 def _english_article(topic: str, keyword: str, geo: str, chunks: list[dict]) -> str:
-    title = topic.title()
+    title = headline_case(topic)
     sections = [c for c in _section_chunks(chunks) if c["id"] != RED_FLAGS_CHUNK_ID]
     background = "\n\n".join(f"## {c['title']}\n{c['content']}" for c in sections)
     red_flags = _chunk(RED_FLAGS_CHUNK_ID)
@@ -50,7 +90,7 @@ def _english_article(topic: str, keyword: str, geo: str, chunks: list[dict]) -> 
 
 **{keyword}** is one of the most searched topics in gut health today. This guide brings together what is well established about {topic}, the approaches that commonly help, and the signs that mean symptoms need a doctor rather than home management.
 
-## What is {topic}?
+## Understanding {title}
 {title} relates to the digestive (gastrointestinal) tract and is something many readers in **{geo}** look for guidance on. Symptoms, triggers and the most suitable approach differ from person to person, so the sections below describe common patterns rather than a single plan that suits everyone.
 
 {background}
@@ -88,7 +128,7 @@ If symptoms persist for more than 3 weeks, keep returning, or affect daily life,
 
 ## Frequently Asked Questions
 
-### What is {topic}?
+### Understanding {title}
 {first_fact}
 
 ### Can diet changes help?
@@ -102,7 +142,7 @@ No — do not stop or change prescribed medication without talking to the doctor
 
 
 def _hindi_article(topic: str, keyword: str, geo: str) -> str:
-    title = topic.title()
+    title = headline_case(topic)
     return f"""# {title}: आपकी संपूर्ण गाइड
 
 **{keyword}** आज गट हेल्थ (पाचन तंत्र) से जुड़े सबसे ज़्यादा खोजे जाने वाले विषयों में से एक है। इस गाइड में {topic} से जुड़ी भरोसेमंद जानकारी, आम तौर पर मदद करने वाले उपाय और वे संकेत दिए गए हैं जिनमें घरेलू देखभाल के बजाय डॉक्टर से मिलना ज़रूरी है।
@@ -171,12 +211,13 @@ def mock_result(topic: str, keyword: str, geo: str, language: str = "en") -> dic
         meta_variants = [
             f"{keyword} के बारे में हमारी विशेषज्ञ गाइड पढ़ें, {geo} के लिए तैयार। लक्षण, डाइट टिप्स जानें।",
             f"क्या आप {keyword} से जूझ रहे हैं? {geo} के लिए कारण, लक्षण और प्रबंधन के तरीके जानें।",
-            f"{topic.title()} पूरी जानकारी: {geo} के पाठकों के लिए लक्षण, डाइट और देखभाल की जानकारी।",
+            f"{headline_case(topic)} पूरी जानकारी: {geo} के पाठकों के लिए लक्षण, डाइट और देखभाल की जानकारी।",
         ]
         faqs = [
-            {"question": f"{topic} क्या है?", "answer": f"{topic.title()} पाचन तंत्र से जुड़ी एक स्थिति है, जिसमें जीवनशैली और आहार में बदलाव से कई लोगों को राहत मिल सकती है।"},
+            {"question": f"{topic} क्या है?", "answer": f"{headline_case(topic)} पाचन तंत्र से जुड़ी एक स्थिति है, जिसमें जीवनशैली और आहार में बदलाव से कई लोगों को राहत मिल सकती है।"},
             {"question": "डॉक्टर से कब मिलना चाहिए?", "answer": f"अगर लक्षण 3 हफ्तों से ज़्यादा बने रहें, या मल में खून, वज़न कम होना या लगातार उल्टी हो, तो {geo} में डॉक्टर से मिलें।"},
         ]
+        meta_variants = [fit_meta(m, "hi") for m in meta_variants]
         cta_soft = "गट हेल्थ से जुड़े और मुफ़्त संसाधन हमारे ब्लॉग पर देखें।"
         cta_direct = f"आज ही Healthy Gut मुफ़्त में आज़माएँ — {geo} के लिए पर्सनलाइज़्ड प्लान!"
     else:
@@ -184,12 +225,13 @@ def mock_result(topic: str, keyword: str, geo: str, language: str = "en") -> dic
         meta_variants = [
             f"Learn about {keyword} with our expert guide targeting {geo}. Find symptoms, diet tips, and when to seek help.",
             f"Struggling with {keyword}? Discover causes, symptoms, and management options tailored for {geo}.",
-            f"{topic.title()} explained: what {geo} readers need to know about symptoms, diet, and care.",
+            f"{headline_case(topic)} explained: what {geo} readers need to know about symptoms, diet, and care.",
         ]
         faqs = [
-            {"question": f"What is {topic}?", "answer": _first_sentence(chunks[0]["content"]) if chunks else ""},
+            {"question": f"What should I know about {headline_case(topic)}?", "answer": _first_sentence(chunks[0]["content"]) if chunks else ""},
             {"question": "When should I see a doctor?", "answer": f"If symptoms last more than 3 weeks, or you notice blood in stool, unexplained weight loss or persistent vomiting, see a doctor in {geo}."},
         ]
+        meta_variants = [fit_meta(m, "en") for m in meta_variants]
         cta_soft = "Explore more free gut health resources on our blog."
         cta_direct = f"Try Healthy Gut FREE today — personalized plans for {geo}!"
 

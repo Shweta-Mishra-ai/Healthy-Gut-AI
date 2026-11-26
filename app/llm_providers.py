@@ -1,5 +1,8 @@
 import asyncio
+import contextvars
 import logging
+import time
+from collections import deque
 
 from app.config import settings
 from app.language import check_language, strip_foreign_script
@@ -16,6 +19,28 @@ from app.prompts import LANGUAGE_CORRECTION, build_prompts
 from app.rag.retriever import build_rag_context
 
 logger = logging.getLogger("gutfolio.llm")
+
+# Token usage of the generation in progress, summed across every provider
+# call it makes (drafts, JSON passes, retries). Without it there was no way
+# to know what an article costs, which any pricing depends on.
+_USAGE: contextvars.ContextVar[dict | None] = contextvars.ContextVar("llm_usage", default=None)
+
+# Outcome of recent generations while providers are configured: True when
+# every provider failed and the template was served. That fallback is silent
+# by design ("the app still works"), which is how a decommissioned model went
+# unnoticed; /health and the generator page now report it.
+_RECENT_OUTCOMES: deque = deque(maxlen=20)
+
+
+def provider_status() -> dict:
+    recent = list(_RECENT_OUTCOMES)
+    fallbacks = [t for t, fell_back in recent if fell_back]
+    return {
+        "recent_generations": len(recent),
+        "recent_fallbacks": len(fallbacks),
+        "last_fallback_at": max(fallbacks) if fallbacks else None,
+        "degraded": bool(recent) and recent[-1][1],
+    }
 
 
 # One AsyncOpenAI client per (base_url, key) instead of one per request.
@@ -43,6 +68,11 @@ async def _call_openai_compatible(base_url, api_key, model, prompt, json_mode=Fa
     if json_mode:
         kwargs["response_format"] = {"type": "json_object"}
     resp = await client.chat.completions.create(**kwargs)
+    usage, acc = getattr(resp, "usage", None), _USAGE.get()
+    if usage is not None and acc is not None:
+        acc["prompt_tokens"] += getattr(usage, "prompt_tokens", 0) or 0
+        acc["completion_tokens"] += getattr(usage, "completion_tokens", 0) or 0
+        acc["calls"] += 1
     if not resp.choices:
         raise ProviderOutputError("provider returned no choices")
     content = resp.choices[0].message.content
@@ -139,12 +169,18 @@ async def llm_generate(topic: str, keyword: str, geo: str, article_type: str, la
                 continue
         return result, errors
 
+    usage = {"prompt_tokens": 0, "completion_tokens": 0, "calls": 0}
+    usage_token = _USAGE.set(usage)
     try:
         result, errors = await asyncio.wait_for(_try_all_providers(), timeout=settings.LLM_OVERALL_BUDGET_SECONDS)
     except TimeoutError:
         budget = settings.LLM_OVERALL_BUDGET_SECONDS
         result, errors = None, [f"overall {budget}s generation budget exceeded across all providers"]
+    finally:
+        _USAGE.reset(usage_token)
 
+    if providers:
+        _RECENT_OUTCOMES.append((time.time(), result is None))
     if result is None:
         if providers:
             logger.error("All LLM providers failed, falling back to mock. Errors: %s", errors)
@@ -177,4 +213,5 @@ async def llm_generate(topic: str, keyword: str, geo: str, article_type: str, la
         # The template path cannot act on feedback; say so rather than imply
         # the rejection note shaped this article.
         result["reviewer_feedback"] = {"note": feedback, "applied": result.get("provider_used") != "mock"}
+    result["usage"] = usage
     return result

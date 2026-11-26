@@ -5,6 +5,11 @@ services:
     buildCommand: pip install -r requirements.txt
     startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
     envVars:
+      # Render generates a random key on first deploy (Dashboard > Environment).
+      # Paste it into "Access key" in the app header. Without a key the app's
+      # generation, review and publishing routes stay disabled.
+      - key: API_KEY
+        generateValue: true
       - key: LOG_LEVEL
         value: INFO
       - key: RATE_LIMIT_PER_MINUTE

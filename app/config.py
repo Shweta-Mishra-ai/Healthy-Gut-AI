@@ -56,8 +56,15 @@ class Settings:
     # emitted as site-relative paths, which stay valid once published.
     PUBLIC_SITE_URL: str = os.getenv("PUBLIC_SITE_URL", "").rstrip("/")
 
-    # --- API auth (optional — if set, /generate*, /export/* require X-API-Key header) ---
+    # --- API auth ---
+    # Every route that generates, exports, reviews, publishes or reveals the
+    # article library requires the X-API-Key header. With API_KEY unset those
+    # routes are disabled (fail closed) unless ALLOW_UNAUTHENTICATED is set
+    # explicitly — meant for local development only. The old default was
+    # "no key, no auth": a fresh deploy let anyone approve articles under any
+    # doctor's name and publish them live to the configured WordPress site.
     API_KEY: str = os.getenv("API_KEY", "")
+    ALLOW_UNAUTHENTICATED: bool = os.getenv("ALLOW_UNAUTHENTICATED", "").strip().lower() in ("1", "true", "yes")
 
     # --- Persistent storage (SQLite) ---
     DATABASE_PATH: str = os.getenv("DATABASE_PATH", "gutfolio.db")

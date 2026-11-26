@@ -44,7 +44,11 @@ def _load_corpus(exclude_id: str = None) -> list[dict]:
     conn = get_connection()
     with get_lock():
         rows = conn.execute(
-            "SELECT id, topic, primary_keyword, status, article_json FROM reviews ORDER BY created_at DESC LIMIT 500"
+            # Rejected drafts are not content anyone will publish; counting them
+            # made every regeneration after a rejection a "duplicate" of the
+            # very article it replaces (similarity 1.0).
+            "SELECT id, topic, primary_keyword, status, article_json FROM reviews "
+            "WHERE status != 'rejected' ORDER BY created_at DESC LIMIT 500"
         ).fetchall()
 
     corpus = []

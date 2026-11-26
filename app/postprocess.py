@@ -147,9 +147,10 @@ def ensure_meta_variants(result: dict, language: str = "en") -> dict:
 
 
 def append_references(article_markdown: str, matched_chunks: list, language: str = "en") -> str:
-    """Appends a real 'Sources Referenced' section listing the actual
-    knowledge-base chunks used to ground this article — verifiable, not
-    fabricated citations. Skips if already present (idempotent)."""
+    """Appends a 'Sources Referenced' section listing the knowledge-base
+    entries actually retrieved to ground this article — real, not invented,
+    but internal summaries, not external citations a reader can look up.
+    Skips if already present (idempotent)."""
     lower = article_markdown.lower()
     if "## sources referenced" in lower or "## references" in lower or "## संदर्भित स्रोत" in article_markdown:
         return article_markdown

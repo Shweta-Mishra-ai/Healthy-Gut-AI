@@ -52,7 +52,8 @@ def init_db():
         # columns added explicitly. SQLite has no "ADD COLUMN IF NOT EXISTS",
         # so we probe and swallow the specific "duplicate column" error only.
         for column_def in ("reviewer_name TEXT", "reviewer_credential TEXT",
-                           "wp_post_id INTEGER", "wp_post_url TEXT", "wp_published_at REAL"):
+                           "wp_post_id INTEGER", "wp_post_url TEXT", "wp_published_at REAL",
+                           "reviewer_registration TEXT", "reviewer_verified INTEGER DEFAULT 0"):
             try:
                 _conn.execute(f"ALTER TABLE reviews ADD COLUMN {column_def}")
             except sqlite3.OperationalError as e:
@@ -74,6 +75,12 @@ def init_db():
                 cached INTEGER NOT NULL DEFAULT 0
             )
         """)
+        for column_def in ("prompt_tokens INTEGER DEFAULT 0", "completion_tokens INTEGER DEFAULT 0"):
+            try:
+                _conn.execute(f"ALTER TABLE generations ADD COLUMN {column_def}")
+            except sqlite3.OperationalError as e:
+                if "duplicate column" not in str(e).lower():
+                    raise
         _conn.execute("CREATE INDEX IF NOT EXISTS idx_generations_timestamp ON generations(timestamp)")
         _conn.commit()
 

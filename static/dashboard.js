@@ -12,13 +12,15 @@ async function loadDashboard() {
         const data = await res.json();
 
         summary.innerHTML = `
-<div class="dash-card"><h3>${esc(data.total_requests)}</h3><p>Total requests</p></div>
+<div class="dash-card"><h3>${esc(data.total_requests)}</h3><p>Requests in history</p></div>
 <div class="dash-card"><h3>${esc(data.succeeded)}</h3><p>Succeeded</p></div>
 <div class="dash-card"><h3>${esc(data.out_of_scope)}</h3><p>Out of scope</p></div>
 <div class="dash-card"><h3>${esc(data.failed)}</h3><p>Failed</p></div>
 <div class="dash-card"><h3>${scoreBadge(data.avg_quality_score ? Math.round(data.avg_quality_score) : data.avg_quality_score)}</h3><p>Average quality</p></div>
 <div class="dash-card"><h3>${esc(data.avg_word_count)}</h3><p>Average words</p></div>
-<div class="dash-card"><h3>${esc(data.cache_hit_rate_percent)}%</h3><p>Cache hit rate</p></div>`;
+<div class="dash-card"><h3>${esc(data.cache_hit_rate_percent)}%</h3><p>Cache hit rate</p></div>
+<div class="dash-card"><h3>${esc(data.avg_tokens_per_article || 0)}</h3><p>Avg tokens / article</p></div>
+<p class="muted small dash-note">Figures cover the most recent ${esc(data.history_limit)} generations kept in history, not all time.</p>`;
 
         if (!data.recent.length) {
             tbody.innerHTML = '<tr><td colspan="6" class="empty-state">Nothing generated yet. Start on the Generator tab.</td></tr>';
@@ -26,12 +28,12 @@ async function loadDashboard() {
         }
         tbody.innerHTML = data.recent.map(r => `
 <tr>
-<td><strong>${esc(r.topic)}</strong></td>
-<td>${esc(r.provider ? Gutfolio.providerLabel(r.provider) : '—')}</td>
-<td><span class="status-pill ${r.success ? 'pill-ok' : r.out_of_scope ? 'pill-draft' : 'pill-fail'}">${r.success ? 'OK' : r.out_of_scope ? 'Out of scope' : 'Failed'}</span></td>
-<td>${r.success ? scoreBadge(r.quality_score) : '—'}</td>
-<td>${r.success ? esc(r.word_count) : '—'}</td>
-<td>${r.cached ? 'Yes' : 'No'}</td>
+<td data-label="Topic"><strong>${esc(r.topic)}</strong></td>
+<td data-label="Provider">${esc(r.provider ? Gutfolio.providerLabel(r.provider) : '—')}</td>
+<td data-label="Status"><span class="status-pill ${r.success ? 'pill-ok' : r.out_of_scope ? 'pill-draft' : 'pill-fail'}">${r.success ? 'OK' : r.out_of_scope ? 'Out of scope' : 'Failed'}</span></td>
+<td data-label="Quality">${r.success ? scoreBadge(r.quality_score) : '—'}</td>
+<td data-label="Words">${r.success ? esc(r.word_count) : '—'}</td>
+<td data-label="Cache">${r.cached ? 'Yes' : 'No'}</td>
 </tr>`).join('');
     } catch (err) {
         console.error('Dashboard load failed:', err);

@@ -1,6 +1,25 @@
 import re
 
 
+def _phrase_pattern(phrase: str) -> re.Pattern:
+    """Whole-word match for a (possibly multi-word) keyword. A plain substring
+    count found "gas" three times in "Gastritis and gastroenteritis ... vegas"
+    and "ibs" in "ribs"."""
+    words = [re.escape(w) for w in phrase.split()]
+    return re.compile(r"(?<!\w)" + r"\s+".join(words) + r"(?!\w)", re.IGNORECASE)
+
+
+def count_phrase(text: str, phrase: str) -> int:
+    phrase = (phrase or "").strip()
+    if not phrase or not text:
+        return 0
+    return len(_phrase_pattern(phrase).findall(text))
+
+
+def contains_phrase(text: str, phrase: str) -> bool:
+    return count_phrase(text, phrase) > 0
+
+
 def keyword_density(text: str, kw: str) -> dict:
     if not text or not text.strip():
         return {"totalWords": 0, "keywordCount": 0, "keywordDensityPercent": 0.0}
@@ -9,10 +28,9 @@ def keyword_density(text: str, kw: str) -> dict:
     kw_clean = re.sub(r"\s+", " ", (kw or "").lower().strip())
     if not kw_clean:
         return {"totalWords": total, "keywordCount": 0, "keywordDensityPercent": 0.0}
-    # Count occurrences of the full keyword phrase (handles multi-word keywords
-    # like "IBS diet", which the old single-word-token check could never match).
-    normalized_text = re.sub(r"\s+", " ", text.lower())
-    count = normalized_text.count(kw_clean)
+    # Whole occurrences of the full keyword phrase (multi-word keywords like
+    # "IBS diet" included), not substrings inside other words.
+    count = count_phrase(text, kw_clean)
     kw_word_count = len(kw_clean.split()) or 1
     density = round((count * kw_word_count) / total * 100, 2)
     return {
@@ -29,12 +47,40 @@ def count_syllables(word: str) -> int:
 _SENTENCE_END_RE = re.compile(r"[.!?।॥]")  # includes Devanagari danda/double-danda
 
 
+_MD_PREFIX_RE = re.compile(r"^(#{1,6}\s+|[-*+]\s+|\d+[.)]\s+|>\s*)")
+_ENDS_SENTENCE_RE = re.compile(r"[.!?।॥:;]$")
+
+
+def _prose_for_readability(text: str) -> str:
+    """Markdown reduced to sentences. Headings, list items and table rows have
+    no full stop, so the raw text counted a whole bullet list as one sentence:
+    twenty short, simple bullets scored -61 ("very difficult") while the same
+    words as prose scored 92. Each block element now ends its own sentence,
+    tables and rules are dropped, and link/emphasis syntax is removed."""
+    out = []
+    for line in text.splitlines():
+        s = line.strip()
+        if not s or s.startswith("|") or re.fullmatch(r"[-*_]{3,}", s):
+            continue
+        s = _MD_PREFIX_RE.sub("", s)
+        s = re.sub(r"\[([^\]]+)\]\([^)]*\)", r"\1", s)
+        s = re.sub(r"https?://\S+", "", s)
+        s = re.sub(r"[*_`]", "", s).strip()
+        if not s:
+            continue
+        if not _ENDS_SENTENCE_RE.search(s):
+            s += "."
+        out.append(s)
+    return " ".join(out)
+
+
 def readability(text: str, language: str = "en") -> dict:
     if not text or not text.strip():
         return {
             "fleschReadingEase": 0.0, "gunningFogIndex": 0.0, "avgSentenceLength": 0.0,
             "gradeLevel": "n/a", "note": "empty text",
         }
+    text = _prose_for_readability(text)
     words = re.findall(r"\S+", text)
     nw = len(words) or 1
     sentences = len(_SENTENCE_END_RE.findall(text)) or 1

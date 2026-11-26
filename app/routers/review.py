@@ -4,6 +4,8 @@ import time
 from fastapi import APIRouter
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 
+from app import reviewers
+from app.config import settings
 from app.constants import STATIC_DIR
 from app.dashboard import tracker
 from app.language import check_language
@@ -17,6 +19,7 @@ from app.review import (
     review_store,
 )
 from app.schemas import ReviewActionRequest, ReviewEditRequest
+from app.seo import build_seo_pack
 
 logger = logging.getLogger("gutfolio.review")
 router = APIRouter()
@@ -32,12 +35,20 @@ def review_counts():
     return review_store.counts()
 
 
+@router.get("/reviewers")
+def list_reviewers():
+    return {"registry_enabled": reviewers.registry_enabled(), "reviewers": reviewers.public_list()}
+
+
 @router.get("/review/queue")
-def review_queue(status: str = "draft", limit: int = 50):
+def review_queue(status: str = "draft", limit: int = 50, offset: int = 0, q: str = ""):
     valid_statuses = {s.value for s in ReviewStatus}
     if status not in valid_statuses:
         return JSONResponse(status_code=422, content={"error": f"status must be one of {sorted(valid_statuses)}"})
-    return {"items": review_store.list_queue(status=status, limit=limit)}
+    limit = max(1, min(limit, 200))
+    # One extra row tells the page whether a "Load more" button is needed.
+    rows = review_store.list_queue(status=status, limit=limit + 1, offset=offset, query=q[:100])
+    return {"items": rows[:limit], "has_more": len(rows) > limit, "offset": max(0, offset), "limit": limit}
 
 
 @router.get("/review/{article_id}")
@@ -48,18 +59,54 @@ def review_get(article_id: str):
         return JSONResponse(status_code=404, content={"error": str(e)})
 
 
+def _attach_reviewed_by(article_id: str, reviewer: dict) -> None:
+    """Rebuilds the stored structured data with the registered reviewer as
+    schema.org reviewedBy before the draft is approved (the SEO pack is built
+    at generation time, when there is no reviewer yet)."""
+    item = review_store.get(article_id)
+    if item["status"] != ReviewStatus.draft.value:
+        return  # set_status reports the invalid transition
+    req = request_for_review(item)
+    article = dict(item["article"])
+    article["seo"] = build_seo_pack(
+        article, req.topic, req.primary_keyword, req.geo_target, req.language.value,
+        site_url=settings.PUBLIC_SITE_URL, reviewer=reviewer,
+    )
+    article["schema_json_ld"] = article["seo"]["structured_data"]
+    review_store.update_article(article_id, article)
+
+
 @router.post("/review/{article_id}/approve")
 def review_approve(article_id: str, payload: ReviewActionRequest):
+    if reviewers.registry_enabled():
+        reviewer = reviewers.get_reviewer(payload.reviewer_id)
+        if reviewer is None:
+            return JSONResponse(status_code=422, content={
+                "error": "Choose a registered reviewer (reviewer_id) — see GET /reviewers.",
+            })
+        identity = {
+            "reviewer_name": reviewer["name"], "reviewer_credential": reviewer["credential"],
+            "reviewer_registration": reviewer["registration"], "reviewer_verified": True,
+        }
+        try:
+            _attach_reviewed_by(article_id, reviewer)
+        except ReviewNotFoundError as e:
+            return JSONResponse(status_code=404, content={"error": str(e)})
+        except InvalidTransitionError as e:
+            return JSONResponse(status_code=409, content={"error": str(e)})
+    else:
+        identity = {
+            "reviewer_name": payload.reviewer_name, "reviewer_credential": payload.reviewer_credential,
+            "reviewer_verified": False,
+        }
     try:
-        item = review_store.set_status(
-            article_id, ReviewStatus.approved, payload.note,
-            reviewer_name=payload.reviewer_name, reviewer_credential=payload.reviewer_credential,
-        )
+        item = review_store.set_status(article_id, ReviewStatus.approved, payload.note, **identity)
         logger.info("Article %s approved%s", article_id, f" — {payload.note}" if payload.note else "")
         return {
             "id": item["id"], "status": item["status"], "reviewed_at": item["reviewed_at"],
             "reviewer_note": item["reviewer_note"], "reviewer_name": item["reviewer_name"],
             "reviewer_credential": item["reviewer_credential"], "reviewer_badge": item["reviewer_badge"],
+            "reviewer_verified": item["reviewer_verified"], "reviewer_attestation": item["reviewer_attestation"],
         }
     except ReviewNotFoundError as e:
         return JSONResponse(status_code=404, content={"error": str(e)})

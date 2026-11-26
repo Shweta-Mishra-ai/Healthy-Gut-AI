@@ -100,7 +100,8 @@ function metricsBlock(data) {
 </div>${qualityFlagsBlock(data.quality?.flags)}`;
 }
 
-const RISK_LABELS = { blocked: 'Blocked', review: 'Review', clear: 'Clear' };
+// "No rule findings", never "Clear": a pattern scan cannot certify content as compliant.
+const RISK_LABELS = { blocked: 'Blocked', review: 'Review', clear: 'No rule findings' };
 
 function riskPill(risk) {
     if (!risk) return '<span class="status-pill pill-draft">n/a</span>';
@@ -717,3 +718,22 @@ document.addEventListener('click', e => {
         if (el) Gutfolio.copy(el.textContent, targetBtn);
     }
 });
+
+/* ---------- provider health ----------
+   When every configured provider fails, articles silently fall back to the
+   offline template — the app "still works", which is how a decommissioned
+   model once went unnoticed. Say so where articles are generated. */
+(async function checkProviderHealth() {
+    try {
+        const res = await fetch('/health');
+        if (!res.ok) return;
+        const data = await res.json();
+        const status = data.provider_status || {};
+        if (data.mode === 'live' && status.degraded) {
+            const el = document.getElementById('provider-banner');
+            el.textContent = `The AI providers failed on the most recent generation (${status.recent_fallbacks} of the last `
+                + `${status.recent_generations}), so articles are using the offline template. Check the provider keys and model names on the server.`;
+            el.classList.remove('hidden');
+        }
+    } catch { /* health is informational only */ }
+})();

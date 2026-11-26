@@ -55,10 +55,15 @@ class ReviewStore:
                 (article_id, topic, primary_keyword, ReviewStatus.draft.value, quality_score,
                  word_count, provider_used, now, None, None, article_json),
             )
-            # Keep only the most recent max_entries rows overall.
+            # Prune old drafts and rejections beyond max_entries. Approved
+            # articles are never pruned: they are the published library (and
+            # carry the WordPress post id a re-publish updates). The old rule
+            # deleted the oldest rows whatever their status, so after 1000
+            # generations live articles silently disappeared.
             conn.execute(
-                "DELETE FROM reviews WHERE id NOT IN (SELECT id FROM reviews ORDER BY created_at DESC LIMIT ?)",
-                (self._max_entries,),
+                """DELETE FROM reviews WHERE status != ? AND id NOT IN
+                   (SELECT id FROM reviews ORDER BY created_at DESC LIMIT ?)""",
+                (ReviewStatus.approved.value, self._max_entries),
             )
             conn.commit()
         return article_id
@@ -72,7 +77,8 @@ class ReviewStore:
         return self._row_to_full_dict(row)
 
     def set_status(self, article_id: str, new_status: ReviewStatus, note: str = "",
-                    reviewer_name: str = "", reviewer_credential: str = "") -> dict:
+                    reviewer_name: str = "", reviewer_credential: str = "",
+                    reviewer_registration: str = "", reviewer_verified: bool = False) -> dict:
         conn = get_connection()
         with get_lock():
             row = conn.execute("SELECT status FROM reviews WHERE id = ?", (article_id,)).fetchone()
@@ -85,8 +91,10 @@ class ReviewStore:
             now = time.time()
             conn.execute(
                 """UPDATE reviews SET status = ?, reviewed_at = ?, reviewer_note = ?,
-                   reviewer_name = ?, reviewer_credential = ? WHERE id = ?""",
-                (new_status.value, now, note or None, reviewer_name or None, reviewer_credential or None, article_id),
+                   reviewer_name = ?, reviewer_credential = ?, reviewer_registration = ?,
+                   reviewer_verified = ? WHERE id = ?""",
+                (new_status.value, now, note or None, reviewer_name or None, reviewer_credential or None,
+                 reviewer_registration or None, int(bool(reviewer_verified)), article_id),
             )
             conn.commit()
             updated = conn.execute("SELECT * FROM reviews WHERE id = ?", (article_id,)).fetchone()
@@ -142,14 +150,21 @@ class ReviewStore:
             )
             conn.commit()
 
-    def list_queue(self, status: str = "draft", limit: int = 50) -> list[dict]:
+    def list_queue(self, status: str = "draft", limit: int = 50, offset: int = 0, query: str = "") -> list[dict]:
         limit = max(1, min(limit, 200))
+        offset = max(0, offset)
+        sql = "SELECT * FROM reviews WHERE status = ?"
+        params: list = [status]
+        query = (query or "").strip()
+        if query:
+            sql += " AND (topic LIKE ? ESCAPE '\\' OR primary_keyword LIKE ? ESCAPE '\\')"
+            like = "%" + query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+            params += [like, like]
+        sql += " ORDER BY created_at DESC LIMIT ? OFFSET ?"
+        params += [limit, offset]
         conn = get_connection()
         with get_lock():
-            rows = conn.execute(
-                "SELECT * FROM reviews WHERE status = ? ORDER BY created_at DESC LIMIT ?",
-                (status, limit),
-            ).fetchall()
+            rows = conn.execute(sql, params).fetchall()
         return [self._row_to_summary_dict(r) for r in rows]
 
     def counts(self) -> dict:
@@ -164,19 +179,39 @@ class ReviewStore:
 
     @staticmethod
     def _reviewer_badge(d: dict) -> str | None:
+        """The public sign-off line — only for a reviewer from the configured
+        registry (see app/reviewers.py). A typed, unverified name never
+        becomes a claim printed on a health article."""
         name = d.get("reviewer_name")
-        credential = d.get("reviewer_credential")
-        if name and credential:
-            return f"Reviewed by {name}, {credential}"
-        if name:
-            return f"Reviewed by {name}"
-        return None
+        if not (name and d.get("reviewer_verified")):
+            return None
+        # "Reviewed for medical accuracy" rather than "approved"/"recommended":
+        # India's NMC advertising guidelines (Oct 2026) and the FTC endorsement
+        # guides both treat a clinician's name on commercial content as an
+        # endorsement unless the role is stated as factual review.
+        badge = f"Reviewed for medical accuracy by {name}"
+        if d.get("reviewer_credential"):
+            badge += f", {d['reviewer_credential']}"
+        if d.get("reviewer_registration"):
+            badge += f" (Reg. No. {d['reviewer_registration']})"
+        return badge
+
+    @staticmethod
+    def _reviewer_attestation(d: dict) -> str | None:
+        """Internal record of an unverified sign-off, shown in the queue only."""
+        name = d.get("reviewer_name")
+        if not name or d.get("reviewer_verified"):
+            return None
+        credential = f", {d['reviewer_credential']}" if d.get("reviewer_credential") else ""
+        return f"Signed off by {name}{credential} (self-attested — not printed on the article)"
 
     @classmethod
     def _row_to_full_dict(cls, row) -> dict:
         d = dict(row)
         d["article"] = json.loads(d.pop("article_json"))
+        d["reviewer_verified"] = bool(d.get("reviewer_verified"))
         d["reviewer_badge"] = cls._reviewer_badge(d)
+        d["reviewer_attestation"] = cls._reviewer_attestation(d)
         return d
 
     @classmethod
@@ -204,7 +239,9 @@ class ReviewStore:
                 d["request"] = article.get("request")
             except (json.JSONDecodeError, AttributeError):
                 pass
+        d["reviewer_verified"] = bool(d.get("reviewer_verified"))
         d["reviewer_badge"] = cls._reviewer_badge(d)
+        d["reviewer_attestation"] = cls._reviewer_attestation(d)
         return d
 
 

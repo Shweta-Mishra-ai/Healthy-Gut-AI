@@ -9,6 +9,7 @@ always comes with a specific, actionable reason.
 import re
 
 from app.language import MIN_SCRIPT_PURITY, find_foreign_script_chars, script_purity
+from app.metrics import contains_phrase
 
 WORD_TARGETS = {
     "pillar": (2500, 3000),
@@ -26,9 +27,14 @@ _SLUG_RE_DEVANAGARI = re.compile(r"^[a-z0-9\u0900-\u097F]+(-[a-z0-9\u0900-\u097F
 # single source of truth so the two checks can't drift out of sync (which
 # is exactly what happened before: this list was English-only while the
 # generation-side safety net already recognized Hindi markers).
+# Phrases that only appear in an actual disclaimer. "consult a" and the
+# Hindi "चिकित्सा सलाह" (medical advice) used to count, so any article that
+# said "consult a gastroenterologist" was treated as already carrying a
+# disclaimer and none was ever added.
 DISCLAIMER_MARKERS = (
-    "disclaimer", "not a substitute for professional", "consult a", "consult your doctor",
-    "अस्वीकरण", "चिकित्सा सलाह",  # Hindi: "disclaimer", "medical advice"
+    "disclaimer", "not a substitute for professional", "for educational purposes only",
+    "for informational purposes only",
+    "अस्वीकरण", "चिकित्सा सलाह का विकल्प नहीं",  # Hindi: "disclaimer", "not a substitute for medical advice"
 )
 
 # Languages whose script purity is worth reporting on. The ranges themselves,
@@ -93,10 +99,10 @@ def assess_quality(result: dict, topic: str, primary_keyword: str, article_type:
         skip_keyword_check = language in _LANGUAGE_SCRIPT_RANGES and kw_is_latin
         if not skip_keyword_check:
             opening = article_md.lower()[:250]
-            if kw not in opening:
+            if not contains_phrase(opening, kw):
                 flags.append("Primary keyword doesn't appear in the article's opening/title area.")
                 score -= 15
-            if kw not in meta.lower():
+            if not contains_phrase(meta, kw):
                 flags.append("Primary keyword is missing from the meta description.")
                 score -= 10
 
