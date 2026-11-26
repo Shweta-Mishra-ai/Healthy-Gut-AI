@@ -22,17 +22,39 @@ jobs:
           cache: pip
 
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        run: pip install -r requirements-dev.txt
 
-      # Installed here rather than in requirements.txt, which is also the
-      # production build (Render) and doesn't need a linter.
       - name: Lint (ruff)
-        run: |
-          pip install ruff==0.15.8
-          ruff check .
+        run: ruff check .
 
-      - name: Run test suite
-        run: python -m pytest tests/ -v
+      - name: Dependency vulnerability audit
+        run: pip-audit -r requirements.txt
 
-      - name: Import sanity check (mock mode)
+      - name: Run test suite (coverage gate 90%)
+        run: python -m pytest tests/ -v --cov=app --cov-report=term-missing --cov-fail-under=90
+
+      - name: Frontend unit tests
+        run: node --test tests_js/*.test.mjs
+
+      - name: Import sanity check (fails closed without API_KEY)
         run: python -c "from app.main import app; print('app imported OK, routes:', len(app.routes))"
+
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt
+
+      - name: Install Chromium for Playwright
+        run: python -m playwright install --with-deps chromium
+
+      - name: Browser end-to-end suite
+        run: python -m pytest e2e -v

@@ -16,16 +16,19 @@ git clone https://github.com/Shweta-Mishra-ai/Healthy-Gut-AI.git
 cd Healthy-Gut-AI
 python -m venv venv
 source venv/bin/activate        # Windows: venv\Scripts\activate
-pip install -r requirements.txt
+pip install -r requirements-dev.txt
 python -m pytest
 ```
 
 ## Running Tests
 
-Run the full test suite using Pytest:
+Run the full test suite using Pytest, plus lint and the frontend/browser suites:
 
 ```bash
 python -m pytest
+ruff check .
+node --test tests_js/*.test.mjs
+python -m pytest e2e      # needs: python -m playwright install chromium
 ```
 
 ## Code Quality Standards

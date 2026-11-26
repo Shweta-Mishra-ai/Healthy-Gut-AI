@@ -3,8 +3,19 @@ let currentStatus = 'draft';
 // Items of the currently shown tab, by id — the regenerate action needs the
 // original request (geo, language, type, tone) that each summary carries.
 const queueItems = new Map();
+const PAGE_SIZE = 25;
+let queueOffset = 0;
+let registry = { registry_enabled: false, reviewers: [] };
 
-const RISK_LABEL = { blocked: 'Blocked', review: 'Review', clear: 'Clear' };
+async function loadRegistry() {
+    try {
+        const res = await Gutfolio.apiFetch('/reviewers');
+        if (res.ok) registry = await res.json();
+    } catch { /* keep the self-attested form */ }
+}
+
+// "No rule findings", never "Clear": a pattern scan cannot certify content as compliant.
+const RISK_LABEL = { blocked: 'Blocked', review: 'Review', clear: 'No rule findings' };
 
 function riskPill(risk) {
     if (!risk) return '';
@@ -30,28 +41,40 @@ async function loadCounts() {
     }
 }
 
-async function loadQueue(status) {
+async function loadQueue(status, options = {}) {
+    const append = Boolean(options.append);
     currentStatus = status;
+    if (!append) queueOffset = 0;
     document.querySelectorAll('.tabs .tab-btn').forEach(b => b.classList.toggle('active', b.dataset.status === status));
     const listEl = document.getElementById('queue-list');
-    listEl.innerHTML = '<p class="muted">Loading...</p>';
+    const moreBtn = document.getElementById('load-more-btn');
+    if (!append) listEl.innerHTML = '<p class="muted">Loading...</p>';
 
     try {
-        const res = await Gutfolio.apiFetch(`/review/queue?status=${encodeURIComponent(status)}`);
+        const params = new URLSearchParams({ status, limit: String(PAGE_SIZE), offset: String(queueOffset) });
+        const query = document.getElementById('queue-search').value.trim();
+        if (query) params.set('q', query);
+        const res = await Gutfolio.apiFetch(`/review/queue?${params}`);
         if (!res.ok) {
             listEl.innerHTML = '<p class="empty-state">Could not load the queue. Check your access key and refresh.</p>';
+            moreBtn.classList.add('hidden');
             return;
         }
         const data = await res.json();
-        queueItems.clear();
+        if (!append) queueItems.clear();
         data.items.forEach(item => queueItems.set(item.id, item));
+        queueOffset += data.items.length;
+        // Only the newest 50 drafts used to be listed, with no way to reach the rest.
+        moreBtn.classList.toggle('hidden', !data.has_more);
 
-        if (!data.items.length) {
-            listEl.innerHTML = `<p class="empty-state">Nothing ${esc(status)} right now.</p>`;
+        if (!append && !data.items.length) {
+            listEl.innerHTML = query
+                ? `<p class="empty-state">No ${esc(status)} articles match “${esc(query)}”.</p>`
+                : `<p class="empty-state">Nothing ${esc(status)} right now.</p>`;
             return;
         }
 
-        listEl.innerHTML = data.items.map(item => `
+        const html = data.items.map(item => `
 <article class="review-card">
 <div class="review-card-head">
 <h3>${esc(item.topic)}</h3>
@@ -69,6 +92,7 @@ ${duplicationPill(item.duplication_status)}
 </div>
 ${qualityFlagsBlock(item.quality_flags)}
 ${item.reviewer_badge ? `<div class="badge-verified">${esc(item.reviewer_badge)}</div>` : ''}
+${item.reviewer_attestation ? `<p class="muted small mt-2xs">${esc(item.reviewer_attestation)}</p>` : ''}
 ${item.reviewer_note ? `<p class="muted small mt-2xs">Note: ${esc(item.reviewer_note)}</p>` : ''}
 <div class="review-actions">
 <button type="button" class="btn-secondary" data-view="${esc(item.id)}">Read full draft</button>
@@ -86,7 +110,10 @@ ${/^https?:\/\//i.test(item.wp_post_url || '') ? `<a class="muted small" href="$
 <div id="wp-result-${esc(item.id)}" class="hidden mt-sm text-sm"></div>
 <div id="article-body-${esc(item.id)}" class="hidden article-content mt-md"></div>
 <div id="editor-${esc(item.id)}" class="hidden review-editor mt-md"></div>
+<div id="decision-${esc(item.id)}" class="hidden review-editor mt-md"></div>
 </article>`).join('');
+        if (append) listEl.insertAdjacentHTML('beforeend', html);
+        else listEl.innerHTML = html;
     } catch (err) {
         listEl.innerHTML = `<p class="empty-state">Failed to load the queue: ${esc(err.message)}</p>`;
     }
@@ -205,25 +232,71 @@ async function saveEdit(id, button) {
     }
 }
 
-async function reviewAction(id, action) {
-    const note = prompt(`Optional note for this ${action}:`) || '';
-    let reviewer_name = '';
-    let reviewer_credential = '';
-    if (action === 'approve') {
-        reviewer_name = prompt('Reviewer name (for example: Dr. Ananya Roy):') || '';
-        if (reviewer_name) {
-            reviewer_credential = prompt('Credential (for example: MD, Gastroenterologist):') || '';
-        }
+/* ---------- approve / reject ----------
+   An in-page form instead of three window.prompt() dialogs: the reviewer can
+   see the article while deciding, the choice of reviewer comes from the
+   configured registry, and a typed name is clearly marked as not published. */
+
+function openDecisionForm(id, action) {
+    const el = document.getElementById(`decision-${id}`);
+    // data-open-for, not data-action: the click handler resolves buttons with
+    // closest('[data-action]'), so a data-action on this container made every
+    // click inside the form (Confirm included) reopen the form instead.
+    if (!el.classList.contains('hidden') && el.dataset.openFor === action) { el.classList.add('hidden'); return; }
+    el.dataset.openFor = action;
+    el.classList.remove('hidden');
+    let who = '';
+    if (action === 'approve' && registry.registry_enabled) {
+        who = `
+<label for="reviewer-${esc(id)}">Reviewer</label>
+<select id="reviewer-${esc(id)}" required>
+<option value="">Choose a registered reviewer</option>
+${registry.reviewers.map(r => `<option value="${esc(r.id)}">${esc(r.name)}${r.credential ? `, ${esc(r.credential)}` : ''}</option>`).join('')}
+</select>`;
+    } else if (action === 'approve') {
+        who = `
+<label for="reviewer-name-${esc(id)}">Your name (optional)</label>
+<input type="text" id="reviewer-name-${esc(id)}" maxlength="100">
+<label for="reviewer-cred-${esc(id)}" class="mt-sm">Credential (optional)</label>
+<input type="text" id="reviewer-cred-${esc(id)}" maxlength="100">
+<p class="muted small mt-xs">No reviewer registry is configured, so this name is kept as an internal, self-attested record and is <strong>not</strong> printed on the article. Set REVIEWERS_JSON on the server to publish a verified sign-off.</p>`;
     }
+    const noteLabel = action === 'reject'
+        ? 'Reason (given to the writer when this topic is regenerated)'
+        : 'Note (optional)';
+    el.innerHTML = `${who}
+<label for="decision-note-${esc(id)}" class="mt-sm">${noteLabel}</label>
+<textarea id="decision-note-${esc(id)}" rows="3" maxlength="500"></textarea>
+<div class="button-row mt-xs">
+<button type="button" class="btn-action ${action}" data-confirm-decision="${esc(id)}" data-decision="${action}">${action === 'approve' ? 'Confirm approval' : 'Confirm rejection'}</button>
+<button type="button" class="btn-secondary" data-cancel-decision="${esc(id)}">Cancel</button>
+</div>`;
+}
+
+async function submitDecision(id, action, button) {
+    const value = elId => (document.getElementById(elId)?.value || '').trim();
+    const body = { note: value(`decision-note-${id}`) };
+    if (action === 'approve' && registry.registry_enabled) {
+        body.reviewer_id = value(`reviewer-${id}`);
+        if (!body.reviewer_id) {
+            Gutfolio.toast('Choose the reviewer who checked this article.', 'error');
+            return;
+        }
+    } else if (action === 'approve') {
+        body.reviewer_name = value(`reviewer-name-${id}`);
+        body.reviewer_credential = value(`reviewer-cred-${id}`);
+    }
+    button.disabled = true;
     try {
         const res = await Gutfolio.apiFetch(`/review/${encodeURIComponent(id)}/${action}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ note, reviewer_name, reviewer_credential }),
+            body: JSON.stringify(body),
         });
         if (!res.ok) {
             const err = await res.json().catch(() => ({}));
-            Gutfolio.toast(`Could not ${action}: ${err.error || 'unknown error'}`, 'error');
+            const details = (err.details || []).map(d => d.msg).join('; ');
+            Gutfolio.toast(`Could not ${action}: ${details || err.error || 'unknown error'}`, 'error');
             return;
         }
         Gutfolio.toast(`Article ${action === 'approve' ? 'approved' : 'rejected'}.`, 'success');
@@ -231,6 +304,8 @@ async function reviewAction(id, action) {
         await loadQueue(currentStatus);
     } catch (err) {
         Gutfolio.toast(`Review action failed: ${err.message}`, 'error');
+    } finally {
+        button.disabled = false;
     }
 }
 
@@ -293,12 +368,23 @@ document.getElementById('queue-list').addEventListener('click', e => {
     const cancel = e.target.closest('[data-cancel-edit]');
     if (cancel) return document.getElementById(`editor-${cancel.dataset.cancelEdit}`).classList.add('hidden');
     const action = e.target.closest('[data-action]');
-    if (action) return reviewAction(action.dataset.id, action.dataset.action);
+    if (action) return openDecisionForm(action.dataset.id, action.dataset.action);
+    const confirm = e.target.closest('[data-confirm-decision]');
+    if (confirm) return submitDecision(confirm.dataset.confirmDecision, confirm.dataset.decision, confirm);
+    const cancelDecision = e.target.closest('[data-cancel-decision]');
+    if (cancelDecision) return document.getElementById(`decision-${cancelDecision.dataset.cancelDecision}`).classList.add('hidden');
     const publish = e.target.closest('[data-publish]');
     if (publish) return publishToWordPress(publish.dataset.publish, publish.dataset.dry === 'true');
     const override = e.target.closest('[data-override]');
     if (override) return publishToWordPress(override.dataset.override, override.dataset.dry === 'true', true);
 });
 
+let searchTimer = null;
+document.getElementById('queue-search').addEventListener('input', () => {
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(() => loadQueue(currentStatus), 300);
+});
+document.getElementById('load-more-btn').addEventListener('click', () => loadQueue(currentStatus, { append: true }));
+
 loadCounts();
-loadQueue('draft');
+loadRegistry().then(() => loadQueue('draft'));

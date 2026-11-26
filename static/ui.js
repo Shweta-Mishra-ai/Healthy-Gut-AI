@@ -43,6 +43,11 @@ const Gutfolio = (() => {
         const res = await fetch(url, opts);
         if (res.status === 401) {
             toast('This deployment requires an access key. Add it under Access key in the header.', 'error');
+        } else if (res.status === 503 || res.status === 403) {
+            // The server explains auth configuration problems (no API_KEY set,
+            // live publish without a key) — show its message, not a generic one.
+            const data = await res.clone().json().catch(() => ({}));
+            if (data.error && /API_KEY/.test(data.error)) toast(data.error, 'error');
         }
         return res;
     }

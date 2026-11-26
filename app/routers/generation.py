@@ -20,6 +20,7 @@ from app.internal_linking import find_related_articles
 from app.llm_providers import llm_generate
 from app.pipeline import enrich_article
 from app.rag.retriever import is_in_domain
+from app.rate_limit import rate_limiter
 from app.review import ReviewNotFoundError, ReviewStatus, review_store
 from app.schemas import BatchGenerateRequest, GenerateRequest
 from app.similarity import check_duplication, duplication_summary
@@ -123,9 +124,11 @@ async def _generate_one(req: GenerateRequest) -> dict:
     result["internal_link_suggestions"] = find_related_articles(
         req.topic, req.primary_keyword, exclude_review_id=review_id
     )
+    usage = result.get("usage") or {}
     tracker.record(
         topic=req.topic, provider=result.get("provider_used", ""), success=True, cached=False,
         word_count=result["metrics"]["wordCount"], quality_score=result["quality"]["score"],
+        prompt_tokens=usage.get("prompt_tokens", 0), completion_tokens=usage.get("completion_tokens", 0),
     )
     return result
 
@@ -140,12 +143,40 @@ async def generate(payload: GenerateRequest):
             return JSONResponse(status_code=502, content=result)
         return JSONResponse(content=result)
     except Exception as e:
+        # The exception text can carry provider responses or internals; it
+        # goes to the log, the client gets a generic message.
         logger.exception("generate() failed: %s", e)
-        return JSONResponse(status_code=500, content={"error": "Article generation failed", "detail": str(e)})
+        return JSONResponse(status_code=500, content={"error": "Article generation failed"})
+
+
+def _charge_batch(request: Request, items: int) -> JSONResponse | None:
+    """The middleware charges one rate-limit hit per request; a batch is N
+    generations, so the other N-1 are charged here. Without this a 10-item
+    batch cost the same as one article — 10x the provider spend per hit."""
+    from app.main import client_key  # app.main imports this module
+
+    extra = items - 1
+    if extra <= 0:
+        return None
+    allowed, retry_after = rate_limiter.allow(client_key(request), cost=extra)
+    if allowed:
+        return None
+    return JSONResponse(
+        status_code=429,
+        content={
+            "error": f"Rate limit exceeded: this batch counts as {items} generations. "
+                     f"Try fewer items or wait.",
+            "retry_after_seconds": retry_after,
+        },
+        headers={"Retry-After": str(retry_after)},
+    )
 
 
 @router.post("/generate/batch")
-async def generate_batch(payload: BatchGenerateRequest):
+async def generate_batch(payload: BatchGenerateRequest, request: Request):
+    limited = _charge_batch(request, len(payload.items))
+    if limited:
+        return limited
     semaphore = asyncio.Semaphore(settings.BATCH_CONCURRENCY)
 
     async def _bounded(req: GenerateRequest):
@@ -154,7 +185,7 @@ async def generate_batch(payload: BatchGenerateRequest):
                 return await _generate_one(req)
             except Exception as e:
                 logger.exception("batch item failed: %s", e)
-                return {"error": str(e), "topic": req.topic}
+                return {"error": "Article generation failed", "topic": req.topic}
 
     results = await asyncio.gather(*(_bounded(item) for item in payload.items))
     ok_count = sum(1 for r in results if "error" not in r)
@@ -180,6 +211,10 @@ async def generate_batch_stream(payload: BatchGenerateRequest, request: Request)
 
     Line protocol: {"type":"start"|"item"|"summary", ...}
     """
+    limited = _charge_batch(request, len(payload.items))
+    if limited:
+        return limited
+
     async def event_stream():
         semaphore = asyncio.Semaphore(settings.BATCH_CONCURRENCY)
         queue: asyncio.Queue = asyncio.Queue()
@@ -197,7 +232,7 @@ async def generate_batch_stream(payload: BatchGenerateRequest, request: Request)
                 raise
             except Exception as e:
                 logger.exception("streamed batch item %d failed: %s", index, e)
-                result = {"error": str(e), "topic": req.topic}
+                result = {"error": "Article generation failed", "topic": req.topic}
             finally:
                 queue.put_nowait((index, result))
 
@@ -241,10 +276,13 @@ async def generate_batch_stream(payload: BatchGenerateRequest, request: Request)
 
 
 @router.post("/export/batch/zip")
-async def export_batch_zip(payload: BatchGenerateRequest):
+async def export_batch_zip(payload: BatchGenerateRequest, request: Request):
     """Regenerates (or reuses cache for) every item in the batch and returns
     a ZIP: one .docx per successful article plus batch_summary.csv covering
     every item, including failures."""
+    limited = _charge_batch(request, len(payload.items))
+    if limited:
+        return limited
     semaphore = asyncio.Semaphore(settings.BATCH_CONCURRENCY)
 
     async def _bounded(req: GenerateRequest):
@@ -253,7 +291,7 @@ async def export_batch_zip(payload: BatchGenerateRequest):
                 result = await _generate_one(req)
             except Exception as e:
                 logger.exception("batch zip item failed: %s", e)
-                result = {"error": str(e)}
+                result = {"error": "Article generation failed"}
             return {"request": req.model_dump(mode="json"), "result": result}
 
     items = await asyncio.gather(*(_bounded(item) for item in payload.items))

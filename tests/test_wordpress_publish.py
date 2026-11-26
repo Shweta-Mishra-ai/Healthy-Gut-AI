@@ -1,5 +1,6 @@
 from unittest.mock import MagicMock, patch
 
+import pytest
 import requests
 from fastapi.testclient import TestClient
 
@@ -8,6 +9,16 @@ from app.cms_wordpress import test_connection as wp_test_connection
 from app.main import app
 
 client = TestClient(app)
+
+
+@pytest.fixture(autouse=True)
+def _api_key_for_live_publish(monkeypatch):
+    """A real (non-dry-run) publish to WordPress always requires API_KEY."""
+    import app.main as main_module
+    monkeypatch.setattr(main_module.settings, "API_KEY", "publish-test-key")
+    client.headers["X-API-Key"] = "publish-test-key"
+    yield
+    client.headers.pop("X-API-Key", None)
 
 
 def _approve_article(topic="WP Publish Test Topic", keyword="IBS diet"):

@@ -10,6 +10,16 @@ from app.main import app
 client = TestClient(app)
 
 
+@pytest.fixture(autouse=True)
+def _api_key_for_live_publish(monkeypatch):
+    """A real (non-dry-run) publish to WordPress always requires API_KEY."""
+    import app.main as main_module
+    monkeypatch.setattr(main_module.settings, "API_KEY", "publish-test-key")
+    client.headers["X-API-Key"] = "publish-test-key"
+    yield
+    client.headers.pop("X-API-Key", None)
+
+
 def _approved_article_id(topic="IBS diet plan"):
     gen = client.post("/generate", json={"topic": topic, "primary_keyword": "IBS diet", "geo_target": "India"}).json()
     assert client.post(f"/review/{gen['review_id']}/approve", json={}).status_code == 200

@@ -17,7 +17,10 @@ class RateLimiter:
         self._hits: dict[str, list] = defaultdict(list)
         self._lock = threading.Lock()
 
-    def allow(self, key: str) -> tuple[bool, int]:
+    def allow(self, key: str, cost: int = 1) -> tuple[bool, int]:
+        """cost > 1 charges several requests at once (a batch of N articles is
+        N generations, not one)."""
+        cost = max(1, cost)
         now = time.time()
         with self._lock:
             # Periodic cleanup of completely stale keys every 100 requests to prevent memory leaks
@@ -28,10 +31,10 @@ class RateLimiter:
             cutoff = now - self._window
             while hits and hits[0] < cutoff:
                 hits.pop(0)
-            if len(hits) >= self._limit:
-                retry_after = int(self._window - (now - hits[0])) + 1
+            if len(hits) + cost > self._limit:
+                retry_after = int(self._window - (now - hits[0])) + 1 if hits else int(self._window)
                 return False, retry_after
-            hits.append(now)
+            hits.extend([now] * cost)
             return True, 0
 
     def _cleanup_locked(self, now: float) -> None:

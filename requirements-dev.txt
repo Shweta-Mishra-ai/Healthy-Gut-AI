@@ -1,0 +1,11 @@
+# Tests, lint and audit tooling. CI and local development install this file;
+# production installs only requirements.txt.
+-r requirements.txt
+pytest==9.2.0
+pytest-asyncio==1.5.0
+pytest-cov==7.1.0
+httpx==0.28.1
+pdfplumber==0.11.11
+ruff==0.15.8
+pip-audit==2.10.1
+playwright==1.65.2

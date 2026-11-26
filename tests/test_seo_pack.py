@@ -101,10 +101,12 @@ def test_structured_data_headline_is_capped_at_schema_limit():
     assert len(data["@graph"][0]["headline"]) <= 110
 
 
-def test_reviewer_badge_becomes_a_reviewed_by_node():
+def test_registered_reviewer_becomes_a_reviewed_by_node():
     data = build_structured_data(RESULT, "IBS diet", "IBS diet tips",
-                                 reviewer_badge="Reviewed by Dr. Ananya Roy, MD")
-    assert data["@graph"][0]["reviewedBy"]["name"] == "Dr. Ananya Roy, MD"
+                                 reviewer={"name": "Dr. Ananya Roy", "credential": "MD", "registration": "R-1"})
+    node = data["@graph"][0]["reviewedBy"]
+    assert node == {"@type": "Person", "name": "Dr. Ananya Roy", "honorificSuffix": "MD", "identifier": "R-1"}
+    assert "lastReviewed" in data["@graph"][0]
 
 
 def test_no_reviewer_means_no_fabricated_review_claim():

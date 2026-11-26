@@ -9,19 +9,22 @@ from app.db import get_connection, get_lock
 
 
 class GenerationTracker:
-    def __init__(self, max_entries: int = 500):
+    def __init__(self, max_entries: int = 5000):
         self._max_entries = max_entries
 
     def record(self, *, topic: str, provider: str, success: bool, out_of_scope: bool = False,
-               word_count: int = 0, quality_score: int = 0, cached: bool = False):
+               word_count: int = 0, quality_score: int = 0, cached: bool = False,
+               prompt_tokens: int = 0, completion_tokens: int = 0):
         conn = get_connection()
         now = time.time()
         with get_lock():
             conn.execute(
                 """INSERT INTO generations
-                   (timestamp, topic, provider, success, out_of_scope, word_count, quality_score, cached)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-                (now, topic, provider, int(success), int(out_of_scope), word_count, quality_score, int(cached)),
+                   (timestamp, topic, provider, success, out_of_scope, word_count, quality_score, cached,
+                    prompt_tokens, completion_tokens)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (now, topic, provider, int(success), int(out_of_scope), word_count, quality_score, int(cached),
+                 prompt_tokens or 0, completion_tokens or 0),
             )
             conn.execute(
                 "DELETE FROM generations WHERE id NOT IN (SELECT id FROM generations ORDER BY timestamp DESC LIMIT ?)",
@@ -54,8 +57,13 @@ class GenerationTracker:
         cache_hit_rate = round(100 * sum(1 for e in succeeded if e["cached"]) / len(succeeded), 1) if succeeded else 0
 
         recent = entries[:max(1, min(limit_recent, 100))]
+        generated = [e for e in succeeded if not e["cached"] and (e.get("prompt_tokens") or e.get("completion_tokens"))]
+        total_tokens = sum((e.get("prompt_tokens") or 0) + (e.get("completion_tokens") or 0) for e in generated)
 
         return {
+            # Every figure here covers the retained history only (the newest
+            # history_limit generations), not all time — the page says so.
+            "history_limit": self._max_entries,
             "total_requests": total,
             "succeeded": len(succeeded),
             "failed": len(failed),
@@ -63,6 +71,10 @@ class GenerationTracker:
             "avg_quality_score": avg_quality,
             "avg_word_count": avg_words,
             "cache_hit_rate_percent": cache_hit_rate,
+            # Provider tokens for articles a provider actually wrote (cached
+            # and template articles cost nothing).
+            "total_tokens": total_tokens,
+            "avg_tokens_per_article": round(total_tokens / len(generated)) if generated else 0,
             "provider_breakdown": provider_counts,
             "recent": [
                 {

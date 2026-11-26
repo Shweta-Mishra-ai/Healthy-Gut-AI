@@ -51,12 +51,14 @@ def test_export_by_id_does_not_count_as_a_generation_on_the_dashboard():
     assert client.get("/dashboard/stats").json()["total_requests"] == before
 
 
-def test_export_by_id_includes_the_reviewer_badge_once_approved():
+def test_export_by_id_includes_the_registered_reviewer_badge_once_approved(monkeypatch):
+    from app import reviewers
+    monkeypatch.setattr(reviewers, "REVIEWERS", reviewers.parse_registry(
+        '[{"id": "rao", "name": "Dr. Rao", "credential": "MD", "registration": "R-9"}]'))
     article = _generate()
-    client.post(f"/review/{article['review_id']}/approve",
-                json={"reviewer_name": "Dr. Rao", "reviewer_credential": "MD"})
+    client.post(f"/review/{article['review_id']}/approve", json={"reviewer_id": "rao"})
     md = client.get(f"/articles/{article['review_id']}/export/markdown").text
-    assert md.rstrip().endswith("*Reviewed by Dr. Rao, MD*")
+    assert md.rstrip().endswith("*Reviewed for medical accuracy by Dr. Rao, MD (Reg. No. R-9)*")
 
 
 def test_export_by_id_unknown_article_and_format():

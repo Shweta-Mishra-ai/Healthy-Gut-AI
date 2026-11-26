@@ -8,3 +8,4 @@ venv/
 *.db
 *.db-wal
 *.db-shm
+.coverage

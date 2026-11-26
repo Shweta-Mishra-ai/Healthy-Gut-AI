@@ -117,7 +117,7 @@ def build_structured_data(
     language: str = "en",
     site_url: str = "",
     publisher_name: str = "Healthy Gut",
-    reviewer_badge: str = "",
+    reviewer: dict | None = None,
 ) -> dict:
     """schema.org @graph covering Article + FAQPage + BreadcrumbList.
 
@@ -158,12 +158,18 @@ def build_structured_data(
     }
     if geo:
         article_node["contentLocation"] = {"@type": "Place", "name": geo}
-    if reviewer_badge:
-        # A named human reviewer is the strongest E-E-A-T signal this app can
-        # emit, and it's only emitted when a real person actually signed off
-        # in the review queue — never fabricated.
-        reviewer = reviewer_badge.replace("Reviewed by", "").strip()
-        article_node["reviewedBy"] = {"@type": "Person", "name": reviewer}
+    if reviewer and reviewer.get("name"):
+        # Emitted only for a reviewer from the configured registry, at the
+        # moment they approve (see the approve route) — never fabricated.
+        # Structured fields, not a parsed badge string: the old code stripped
+        # "Reviewed by" from the badge text, and was never actually called
+        # with a reviewer, so no published article carried this node.
+        person = {"@type": "Person", "name": reviewer["name"]}
+        if reviewer.get("credential"):
+            person["honorificSuffix"] = reviewer["credential"]
+        if reviewer.get("registration"):
+            person["identifier"] = reviewer["registration"]
+        article_node["reviewedBy"] = person
         article_node["lastReviewed"] = now
 
     graph = [article_node]
@@ -240,13 +246,13 @@ def build_table_of_contents(article_markdown: str) -> list[dict]:
 
 
 def build_seo_pack(result: dict, topic: str, keyword: str, geo: str = "", language: str = "en",
-                   site_url: str = "", reviewer_badge: str = "") -> dict:
+                   site_url: str = "", reviewer: dict | None = None) -> dict:
     """Everything an editor needs to publish the article correctly, in one
     object: validated structured data, social tags, title candidates and an
     on-page table of contents."""
     return {
         "structured_data": build_structured_data(
-            result, topic, keyword, geo, language, site_url, reviewer_badge=reviewer_badge
+            result, topic, keyword, geo, language, site_url, reviewer=reviewer
         ),
         "social": build_social_meta(result, topic, keyword, geo, language, site_url),
         "table_of_contents": build_table_of_contents(result.get("optimized_article_markdown", "") or ""),
